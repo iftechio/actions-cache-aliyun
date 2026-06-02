@@ -1,6 +1,6 @@
 name: 'Cache Aliyun'
-description: 'actions/cache@v2 for Aliyun OSS and compatible software (forked Actions)'
-author: 'B1F030'
+description: 'actions/cache for Aliyun OSS and compatible S3 storage'
+author: 'iftechio'
 inputs:
   path:
     description: 'A list of files, directories, and wildcard patterns to cache and restore'
@@ -56,7 +56,7 @@ outputs:
   cache-hit:
     description: 'A boolean value to indicate an exact match was found for the primary key'
 runs:
-  using: 'node16'
+  using: 'node24'
   main: 'dist/restore/index.js'
   post: 'dist/save/index.js'
   post-if: success()

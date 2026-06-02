@@ -1,6 +1,6 @@
-# B1F030/actions-cache-aliyun
+# iftechio/actions-cache-aliyun
 
-`B1F030/actions-cache-aliyun` is a forked Action from [@actions/cache](https://github.com/actions/cache).
+`iftechio/actions-cache-aliyun` is a forked Action from [@actions/cache](https://github.com/actions/cache).
 
 This Action provides Aliyun OSS backend (and compatible software) for @actions/cache.
 
@@ -11,7 +11,7 @@ It supports assuming credentials from `aws-actions/configure-aws-credentials` di
 ```yaml
 # 参考配置（向阿里云 oss 读取或写入缓存）：
 - name: Cache from oss
-  uses: B1F030/actions-cache-aliyun@v0.1
+  uses: iftechio/actions-cache-aliyun@v1
   with:
     aws-endpoint: https://oss-cn-hangzhou-internal.aliyuncs.com
     aws-access-key-id: ${{ secrets.ALIYUN_OSS_ACCESSKEY_ID }}
@@ -25,7 +25,7 @@ It supports assuming credentials from `aws-actions/configure-aws-credentials` di
 
 # 官方文档参数解释
 - name: Cache multiple paths
-  uses: B1F030/actions-cache-aliyun@v0.1
+  uses: iftechio/actions-cache-aliyun@v1
   with:
     path: |
       ~/cache
@@ -43,7 +43,7 @@ It supports assuming credentials from `aws-actions/configure-aws-credentials` di
     aws-s3-force-path-style: true                       # Optional
 ```
 
-Please see [actions.yml](https://github.com/B1F030/actions-cache-s3/blob/main/action.yml) about input parameters.
+Please see [action.yml](https://github.com/iftechio/actions-cache-aliyun/blob/main/action.yml) about input parameters.
 # Cache action
 
 This action allows caching dependencies and build outputs to improve workflow execution time.
