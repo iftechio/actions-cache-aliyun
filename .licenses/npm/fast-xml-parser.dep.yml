@@ -1,8 +1,8 @@
 ---
 name: fast-xml-parser
-version: 3.19.0
+version: 5.7.3
 type: npm
-summary: Validate XML or Parse XML to JS/JSON very fast without C/C++ based libraries
+summary: Validate XML, Parse XML, Build XML without C/C++ based libraries
 homepage:
 license: mit
 licenses:
@@ -30,5 +30,8 @@ licenses:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 - sources: README.md
-  text: "* MIT License"
+  text: |-
+    * MIT License
+
+    ![Donate $5](static/img/donation_quote.png)
 notices: []

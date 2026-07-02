@@ -1,6 +1,6 @@
 ---
 name: "@aws-sdk/lib-storage"
-version: 3.429.0
+version: 3.1058.0
 type: npm
 summary: Storage higher order operation
 homepage: https://github.com/aws/aws-sdk-js-v3/tree/main/lib/lib-storage

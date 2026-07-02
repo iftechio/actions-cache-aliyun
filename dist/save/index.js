@@ -1865,8 +1865,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.create = void 0;
+exports.hashFiles = exports.create = void 0;
 const internal_globber_1 = __nccwpck_require__(10103);
+const internal_hash_files_1 = __nccwpck_require__(73608);
 /**
  * Constructs a globber
  *
@@ -1879,6 +1880,25 @@ function create(patterns, options) {
     });
 }
 exports.create = create;
+/**
+ * Computes the sha256 hash of a glob
+ *
+ * @param patterns  Patterns separated by newlines
+ * @param currentWorkspace  Workspace used when matching files
+ * @param options   Glob options
+ * @param verbose   Enables verbose logging
+ */
+function hashFiles(patterns, currentWorkspace = '', options, verbose = false) {
+    return __awaiter(this, void 0, void 0, function* () {
+        let followSymbolicLinks = true;
+        if (options && typeof options.followSymbolicLinks === 'boolean') {
+            followSymbolicLinks = options.followSymbolicLinks;
+        }
+        const globber = yield create(patterns, { followSymbolicLinks });
+        return internal_hash_files_1.hashFiles(globber, currentWorkspace, verbose);
+    });
+}
+exports.hashFiles = hashFiles;
 //# sourceMappingURL=glob.js.map
 
 /***/ }),
@@ -1917,6 +1937,7 @@ function getOptions(copy) {
     const result = {
         followSymbolicLinks: true,
         implicitDescendants: true,
+        matchDirectories: true,
         omitBrokenSymbolicLinks: true
     };
     if (copy) {
@@ -1927,6 +1948,10 @@ function getOptions(copy) {
         if (typeof copy.implicitDescendants === 'boolean') {
             result.implicitDescendants = copy.implicitDescendants;
             core.debug(`implicitDescendants '${result.implicitDescendants}'`);
+        }
+        if (typeof copy.matchDirectories === 'boolean') {
+            result.matchDirectories = copy.matchDirectories;
+            core.debug(`matchDirectories '${result.matchDirectories}'`);
         }
         if (typeof copy.omitBrokenSymbolicLinks === 'boolean') {
             result.omitBrokenSymbolicLinks = copy.omitBrokenSymbolicLinks;
@@ -2087,7 +2112,7 @@ class DefaultGlobber {
                 // Directory
                 if (stats.isDirectory()) {
                     // Matched
-                    if (match & internal_match_kind_1.MatchKind.Directory) {
+                    if (match & internal_match_kind_1.MatchKind.Directory && options.matchDirectories) {
                         yield yield __await(item.path);
                     }
                     // Descend?
@@ -2179,6 +2204,110 @@ class DefaultGlobber {
 }
 exports.DefaultGlobber = DefaultGlobber;
 //# sourceMappingURL=internal-globber.js.map
+
+/***/ }),
+
+/***/ 73608:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __asyncValues = (this && this.__asyncValues) || function (o) {
+    if (!Symbol.asyncIterator) throw new TypeError("Symbol.asyncIterator is not defined.");
+    var m = o[Symbol.asyncIterator], i;
+    return m ? m.call(o) : (o = typeof __values === "function" ? __values(o) : o[Symbol.iterator](), i = {}, verb("next"), verb("throw"), verb("return"), i[Symbol.asyncIterator] = function () { return this; }, i);
+    function verb(n) { i[n] = o[n] && function (v) { return new Promise(function (resolve, reject) { v = o[n](v), settle(resolve, reject, v.done, v.value); }); }; }
+    function settle(resolve, reject, d, v) { Promise.resolve(v).then(function(v) { resolve({ value: v, done: d }); }, reject); }
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.hashFiles = void 0;
+const crypto = __importStar(__nccwpck_require__(76982));
+const core = __importStar(__nccwpck_require__(37484));
+const fs = __importStar(__nccwpck_require__(79896));
+const stream = __importStar(__nccwpck_require__(2203));
+const util = __importStar(__nccwpck_require__(39023));
+const path = __importStar(__nccwpck_require__(16928));
+function hashFiles(globber, currentWorkspace, verbose = false) {
+    var e_1, _a;
+    var _b;
+    return __awaiter(this, void 0, void 0, function* () {
+        const writeDelegate = verbose ? core.info : core.debug;
+        let hasMatch = false;
+        const githubWorkspace = currentWorkspace
+            ? currentWorkspace
+            : (_b = process.env['GITHUB_WORKSPACE']) !== null && _b !== void 0 ? _b : process.cwd();
+        const result = crypto.createHash('sha256');
+        let count = 0;
+        try {
+            for (var _c = __asyncValues(globber.globGenerator()), _d; _d = yield _c.next(), !_d.done;) {
+                const file = _d.value;
+                writeDelegate(file);
+                if (!file.startsWith(`${githubWorkspace}${path.sep}`)) {
+                    writeDelegate(`Ignore '${file}' since it is not under GITHUB_WORKSPACE.`);
+                    continue;
+                }
+                if (fs.statSync(file).isDirectory()) {
+                    writeDelegate(`Skip directory '${file}'.`);
+                    continue;
+                }
+                const hash = crypto.createHash('sha256');
+                const pipeline = util.promisify(stream.pipeline);
+                yield pipeline(fs.createReadStream(file), hash);
+                result.write(hash.digest());
+                count++;
+                if (!hasMatch) {
+                    hasMatch = true;
+                }
+            }
+        }
+        catch (e_1_1) { e_1 = { error: e_1_1 }; }
+        finally {
+            try {
+                if (_d && !_d.done && (_a = _c.return)) yield _a.call(_c);
+            }
+            finally { if (e_1) throw e_1.error; }
+        }
+        result.end();
+        if (hasMatch) {
+            writeDelegate(`Found ${count} files to hash.`);
+            return result.digest('hex');
+        }
+        else {
+            writeDelegate(`No matches found for glob`);
+            return '';
+        }
+    });
+}
+exports.hashFiles = hashFiles;
+//# sourceMappingURL=internal-hash-files.js.map
 
 /***/ }),
 
@@ -18731,253 +18860,6 @@ exports.InvokeStoreBase = InvokeStoreBase;
 
 /***/ }),
 
-/***/ 68110:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT license.
-/// <reference path="../shims-public.d.ts" />
-const listenersMap = new WeakMap();
-const abortedMap = new WeakMap();
-/**
- * An aborter instance implements AbortSignal interface, can abort HTTP requests.
- *
- * - Call AbortSignal.none to create a new AbortSignal instance that cannot be cancelled.
- * Use `AbortSignal.none` when you are required to pass a cancellation token but the operation
- * cannot or will not ever be cancelled.
- *
- * @example
- * Abort without timeout
- * ```ts
- * await doAsyncWork(AbortSignal.none);
- * ```
- */
-class AbortSignal {
-    constructor() {
-        /**
-         * onabort event listener.
-         */
-        this.onabort = null;
-        listenersMap.set(this, []);
-        abortedMap.set(this, false);
-    }
-    /**
-     * Status of whether aborted or not.
-     *
-     * @readonly
-     */
-    get aborted() {
-        if (!abortedMap.has(this)) {
-            throw new TypeError("Expected `this` to be an instance of AbortSignal.");
-        }
-        return abortedMap.get(this);
-    }
-    /**
-     * Creates a new AbortSignal instance that will never be aborted.
-     *
-     * @readonly
-     */
-    static get none() {
-        return new AbortSignal();
-    }
-    /**
-     * Added new "abort" event listener, only support "abort" event.
-     *
-     * @param _type - Only support "abort" event
-     * @param listener - The listener to be added
-     */
-    addEventListener(
-    // tslint:disable-next-line:variable-name
-    _type, listener) {
-        if (!listenersMap.has(this)) {
-            throw new TypeError("Expected `this` to be an instance of AbortSignal.");
-        }
-        const listeners = listenersMap.get(this);
-        listeners.push(listener);
-    }
-    /**
-     * Remove "abort" event listener, only support "abort" event.
-     *
-     * @param _type - Only support "abort" event
-     * @param listener - The listener to be removed
-     */
-    removeEventListener(
-    // tslint:disable-next-line:variable-name
-    _type, listener) {
-        if (!listenersMap.has(this)) {
-            throw new TypeError("Expected `this` to be an instance of AbortSignal.");
-        }
-        const listeners = listenersMap.get(this);
-        const index = listeners.indexOf(listener);
-        if (index > -1) {
-            listeners.splice(index, 1);
-        }
-    }
-    /**
-     * Dispatches a synthetic event to the AbortSignal.
-     */
-    dispatchEvent(_event) {
-        throw new Error("This is a stub dispatchEvent implementation that should not be used.  It only exists for type-checking purposes.");
-    }
-}
-/**
- * Helper to trigger an abort event immediately, the onabort and all abort event listeners will be triggered.
- * Will try to trigger abort event for all linked AbortSignal nodes.
- *
- * - If there is a timeout, the timer will be cancelled.
- * - If aborted is true, nothing will happen.
- *
- * @internal
- */
-// eslint-disable-next-line @azure/azure-sdk/ts-use-interface-parameters
-function abortSignal(signal) {
-    if (signal.aborted) {
-        return;
-    }
-    if (signal.onabort) {
-        signal.onabort.call(signal);
-    }
-    const listeners = listenersMap.get(signal);
-    if (listeners) {
-        // Create a copy of listeners so mutations to the array
-        // (e.g. via removeListener calls) don't affect the listeners
-        // we invoke.
-        listeners.slice().forEach((listener) => {
-            listener.call(signal, { type: "abort" });
-        });
-    }
-    abortedMap.set(signal, true);
-}
-
-// Copyright (c) Microsoft Corporation.
-/**
- * This error is thrown when an asynchronous operation has been aborted.
- * Check for this error by testing the `name` that the name property of the
- * error matches `"AbortError"`.
- *
- * @example
- * ```ts
- * const controller = new AbortController();
- * controller.abort();
- * try {
- *   doAsyncWork(controller.signal)
- * } catch (e) {
- *   if (e.name === 'AbortError') {
- *     // handle abort error here.
- *   }
- * }
- * ```
- */
-class AbortError extends Error {
-    constructor(message) {
-        super(message);
-        this.name = "AbortError";
-    }
-}
-/**
- * An AbortController provides an AbortSignal and the associated controls to signal
- * that an asynchronous operation should be aborted.
- *
- * @example
- * Abort an operation when another event fires
- * ```ts
- * const controller = new AbortController();
- * const signal = controller.signal;
- * doAsyncWork(signal);
- * button.addEventListener('click', () => controller.abort());
- * ```
- *
- * @example
- * Share aborter cross multiple operations in 30s
- * ```ts
- * // Upload the same data to 2 different data centers at the same time,
- * // abort another when any of them is finished
- * const controller = AbortController.withTimeout(30 * 1000);
- * doAsyncWork(controller.signal).then(controller.abort);
- * doAsyncWork(controller.signal).then(controller.abort);
- *```
- *
- * @example
- * Cascaded aborting
- * ```ts
- * // All operations can't take more than 30 seconds
- * const aborter = Aborter.timeout(30 * 1000);
- *
- * // Following 2 operations can't take more than 25 seconds
- * await doAsyncWork(aborter.withTimeout(25 * 1000));
- * await doAsyncWork(aborter.withTimeout(25 * 1000));
- * ```
- */
-class AbortController {
-    // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
-    constructor(parentSignals) {
-        this._signal = new AbortSignal();
-        if (!parentSignals) {
-            return;
-        }
-        // coerce parentSignals into an array
-        if (!Array.isArray(parentSignals)) {
-            // eslint-disable-next-line prefer-rest-params
-            parentSignals = arguments;
-        }
-        for (const parentSignal of parentSignals) {
-            // if the parent signal has already had abort() called,
-            // then call abort on this signal as well.
-            if (parentSignal.aborted) {
-                this.abort();
-            }
-            else {
-                // when the parent signal aborts, this signal should as well.
-                parentSignal.addEventListener("abort", () => {
-                    this.abort();
-                });
-            }
-        }
-    }
-    /**
-     * The AbortSignal associated with this controller that will signal aborted
-     * when the abort method is called on this controller.
-     *
-     * @readonly
-     */
-    get signal() {
-        return this._signal;
-    }
-    /**
-     * Signal that any operations passed this controller's associated abort signal
-     * to cancel any remaining work and throw an `AbortError`.
-     */
-    abort() {
-        abortSignal(this._signal);
-    }
-    /**
-     * Creates a new AbortSignal instance that will abort after the provided ms.
-     * @param ms - Elapsed time in milliseconds to trigger an abort.
-     */
-    static timeout(ms) {
-        const signal = new AbortSignal();
-        const timer = setTimeout(abortSignal, ms, signal);
-        // Prevent the active Timer from keeping the Node.js event loop active.
-        if (typeof timer.unref === "function") {
-            timer.unref();
-        }
-        return signal;
-    }
-}
-
-exports.AbortController = AbortController;
-exports.AbortError = AbortError;
-exports.AbortSignal = AbortSignal;
-//# sourceMappingURL=index.js.map
-
-
-/***/ }),
-
 /***/ 90402:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
@@ -31474,7 +31356,7 @@ function save(namespaces) {
 function load() {
 	let r;
 	try {
-		r = exports.storage.getItem('debug');
+		r = exports.storage.getItem('debug') || exports.storage.getItem('DEBUG') ;
 	} catch (error) {
 		// Swallow
 		// XXX (@Qix-) should we be logging these?
@@ -31702,7 +31584,7 @@ function setup(env) {
 
 		const split = (typeof namespaces === 'string' ? namespaces : '')
 			.trim()
-			.replace(' ', ',')
+			.replace(/\s+/g, ',')
 			.split(',')
 			.filter(Boolean);
 
@@ -33757,1656 +33639,6 @@ function fmtLong(ms) {
 function plural(ms, msAbs, n, name) {
   var isPlural = msAbs >= n * 1.5;
   return Math.round(ms / n) + ' ' + name + (isPlural ? 's' : '');
-}
-
-
-/***/ }),
-
-/***/ 39318:
-/***/ ((module, exports) => {
-
-exports = module.exports = SemVer
-
-var debug
-/* istanbul ignore next */
-if (typeof process === 'object' &&
-    process.env &&
-    process.env.NODE_DEBUG &&
-    /\bsemver\b/i.test(process.env.NODE_DEBUG)) {
-  debug = function () {
-    var args = Array.prototype.slice.call(arguments, 0)
-    args.unshift('SEMVER')
-    console.log.apply(console, args)
-  }
-} else {
-  debug = function () {}
-}
-
-// Note: this is the semver.org version of the spec that it implements
-// Not necessarily the package version of this code.
-exports.SEMVER_SPEC_VERSION = '2.0.0'
-
-var MAX_LENGTH = 256
-var MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER ||
-  /* istanbul ignore next */ 9007199254740991
-
-// Max safe segment length for coercion.
-var MAX_SAFE_COMPONENT_LENGTH = 16
-
-var MAX_SAFE_BUILD_LENGTH = MAX_LENGTH - 6
-
-// The actual regexps go on exports.re
-var re = exports.re = []
-var safeRe = exports.safeRe = []
-var src = exports.src = []
-var t = exports.tokens = {}
-var R = 0
-
-function tok (n) {
-  t[n] = R++
-}
-
-var LETTERDASHNUMBER = '[a-zA-Z0-9-]'
-
-// Replace some greedy regex tokens to prevent regex dos issues. These regex are
-// used internally via the safeRe object since all inputs in this library get
-// normalized first to trim and collapse all extra whitespace. The original
-// regexes are exported for userland consumption and lower level usage. A
-// future breaking change could export the safer regex only with a note that
-// all input should have extra whitespace removed.
-var safeRegexReplacements = [
-  ['\\s', 1],
-  ['\\d', MAX_LENGTH],
-  [LETTERDASHNUMBER, MAX_SAFE_BUILD_LENGTH],
-]
-
-function makeSafeRe (value) {
-  for (var i = 0; i < safeRegexReplacements.length; i++) {
-    var token = safeRegexReplacements[i][0]
-    var max = safeRegexReplacements[i][1]
-    value = value
-      .split(token + '*').join(token + '{0,' + max + '}')
-      .split(token + '+').join(token + '{1,' + max + '}')
-  }
-  return value
-}
-
-// The following Regular Expressions can be used for tokenizing,
-// validating, and parsing SemVer version strings.
-
-// ## Numeric Identifier
-// A single `0`, or a non-zero digit followed by zero or more digits.
-
-tok('NUMERICIDENTIFIER')
-src[t.NUMERICIDENTIFIER] = '0|[1-9]\\d*'
-tok('NUMERICIDENTIFIERLOOSE')
-src[t.NUMERICIDENTIFIERLOOSE] = '\\d+'
-
-// ## Non-numeric Identifier
-// Zero or more digits, followed by a letter or hyphen, and then zero or
-// more letters, digits, or hyphens.
-
-tok('NONNUMERICIDENTIFIER')
-src[t.NONNUMERICIDENTIFIER] = '\\d*[a-zA-Z-]' + LETTERDASHNUMBER + '*'
-
-// ## Main Version
-// Three dot-separated numeric identifiers.
-
-tok('MAINVERSION')
-src[t.MAINVERSION] = '(' + src[t.NUMERICIDENTIFIER] + ')\\.' +
-                   '(' + src[t.NUMERICIDENTIFIER] + ')\\.' +
-                   '(' + src[t.NUMERICIDENTIFIER] + ')'
-
-tok('MAINVERSIONLOOSE')
-src[t.MAINVERSIONLOOSE] = '(' + src[t.NUMERICIDENTIFIERLOOSE] + ')\\.' +
-                        '(' + src[t.NUMERICIDENTIFIERLOOSE] + ')\\.' +
-                        '(' + src[t.NUMERICIDENTIFIERLOOSE] + ')'
-
-// ## Pre-release Version Identifier
-// A numeric identifier, or a non-numeric identifier.
-
-tok('PRERELEASEIDENTIFIER')
-src[t.PRERELEASEIDENTIFIER] = '(?:' + src[t.NUMERICIDENTIFIER] +
-                            '|' + src[t.NONNUMERICIDENTIFIER] + ')'
-
-tok('PRERELEASEIDENTIFIERLOOSE')
-src[t.PRERELEASEIDENTIFIERLOOSE] = '(?:' + src[t.NUMERICIDENTIFIERLOOSE] +
-                                 '|' + src[t.NONNUMERICIDENTIFIER] + ')'
-
-// ## Pre-release Version
-// Hyphen, followed by one or more dot-separated pre-release version
-// identifiers.
-
-tok('PRERELEASE')
-src[t.PRERELEASE] = '(?:-(' + src[t.PRERELEASEIDENTIFIER] +
-                  '(?:\\.' + src[t.PRERELEASEIDENTIFIER] + ')*))'
-
-tok('PRERELEASELOOSE')
-src[t.PRERELEASELOOSE] = '(?:-?(' + src[t.PRERELEASEIDENTIFIERLOOSE] +
-                       '(?:\\.' + src[t.PRERELEASEIDENTIFIERLOOSE] + ')*))'
-
-// ## Build Metadata Identifier
-// Any combination of digits, letters, or hyphens.
-
-tok('BUILDIDENTIFIER')
-src[t.BUILDIDENTIFIER] = LETTERDASHNUMBER + '+'
-
-// ## Build Metadata
-// Plus sign, followed by one or more period-separated build metadata
-// identifiers.
-
-tok('BUILD')
-src[t.BUILD] = '(?:\\+(' + src[t.BUILDIDENTIFIER] +
-             '(?:\\.' + src[t.BUILDIDENTIFIER] + ')*))'
-
-// ## Full Version String
-// A main version, followed optionally by a pre-release version and
-// build metadata.
-
-// Note that the only major, minor, patch, and pre-release sections of
-// the version string are capturing groups.  The build metadata is not a
-// capturing group, because it should not ever be used in version
-// comparison.
-
-tok('FULL')
-tok('FULLPLAIN')
-src[t.FULLPLAIN] = 'v?' + src[t.MAINVERSION] +
-                  src[t.PRERELEASE] + '?' +
-                  src[t.BUILD] + '?'
-
-src[t.FULL] = '^' + src[t.FULLPLAIN] + '$'
-
-// like full, but allows v1.2.3 and =1.2.3, which people do sometimes.
-// also, 1.0.0alpha1 (prerelease without the hyphen) which is pretty
-// common in the npm registry.
-tok('LOOSEPLAIN')
-src[t.LOOSEPLAIN] = '[v=\\s]*' + src[t.MAINVERSIONLOOSE] +
-                  src[t.PRERELEASELOOSE] + '?' +
-                  src[t.BUILD] + '?'
-
-tok('LOOSE')
-src[t.LOOSE] = '^' + src[t.LOOSEPLAIN] + '$'
-
-tok('GTLT')
-src[t.GTLT] = '((?:<|>)?=?)'
-
-// Something like "2.*" or "1.2.x".
-// Note that "x.x" is a valid xRange identifer, meaning "any version"
-// Only the first item is strictly required.
-tok('XRANGEIDENTIFIERLOOSE')
-src[t.XRANGEIDENTIFIERLOOSE] = src[t.NUMERICIDENTIFIERLOOSE] + '|x|X|\\*'
-tok('XRANGEIDENTIFIER')
-src[t.XRANGEIDENTIFIER] = src[t.NUMERICIDENTIFIER] + '|x|X|\\*'
-
-tok('XRANGEPLAIN')
-src[t.XRANGEPLAIN] = '[v=\\s]*(' + src[t.XRANGEIDENTIFIER] + ')' +
-                   '(?:\\.(' + src[t.XRANGEIDENTIFIER] + ')' +
-                   '(?:\\.(' + src[t.XRANGEIDENTIFIER] + ')' +
-                   '(?:' + src[t.PRERELEASE] + ')?' +
-                   src[t.BUILD] + '?' +
-                   ')?)?'
-
-tok('XRANGEPLAINLOOSE')
-src[t.XRANGEPLAINLOOSE] = '[v=\\s]*(' + src[t.XRANGEIDENTIFIERLOOSE] + ')' +
-                        '(?:\\.(' + src[t.XRANGEIDENTIFIERLOOSE] + ')' +
-                        '(?:\\.(' + src[t.XRANGEIDENTIFIERLOOSE] + ')' +
-                        '(?:' + src[t.PRERELEASELOOSE] + ')?' +
-                        src[t.BUILD] + '?' +
-                        ')?)?'
-
-tok('XRANGE')
-src[t.XRANGE] = '^' + src[t.GTLT] + '\\s*' + src[t.XRANGEPLAIN] + '$'
-tok('XRANGELOOSE')
-src[t.XRANGELOOSE] = '^' + src[t.GTLT] + '\\s*' + src[t.XRANGEPLAINLOOSE] + '$'
-
-// Coercion.
-// Extract anything that could conceivably be a part of a valid semver
-tok('COERCE')
-src[t.COERCE] = '(^|[^\\d])' +
-              '(\\d{1,' + MAX_SAFE_COMPONENT_LENGTH + '})' +
-              '(?:\\.(\\d{1,' + MAX_SAFE_COMPONENT_LENGTH + '}))?' +
-              '(?:\\.(\\d{1,' + MAX_SAFE_COMPONENT_LENGTH + '}))?' +
-              '(?:$|[^\\d])'
-tok('COERCERTL')
-re[t.COERCERTL] = new RegExp(src[t.COERCE], 'g')
-safeRe[t.COERCERTL] = new RegExp(makeSafeRe(src[t.COERCE]), 'g')
-
-// Tilde ranges.
-// Meaning is "reasonably at or greater than"
-tok('LONETILDE')
-src[t.LONETILDE] = '(?:~>?)'
-
-tok('TILDETRIM')
-src[t.TILDETRIM] = '(\\s*)' + src[t.LONETILDE] + '\\s+'
-re[t.TILDETRIM] = new RegExp(src[t.TILDETRIM], 'g')
-safeRe[t.TILDETRIM] = new RegExp(makeSafeRe(src[t.TILDETRIM]), 'g')
-var tildeTrimReplace = '$1~'
-
-tok('TILDE')
-src[t.TILDE] = '^' + src[t.LONETILDE] + src[t.XRANGEPLAIN] + '$'
-tok('TILDELOOSE')
-src[t.TILDELOOSE] = '^' + src[t.LONETILDE] + src[t.XRANGEPLAINLOOSE] + '$'
-
-// Caret ranges.
-// Meaning is "at least and backwards compatible with"
-tok('LONECARET')
-src[t.LONECARET] = '(?:\\^)'
-
-tok('CARETTRIM')
-src[t.CARETTRIM] = '(\\s*)' + src[t.LONECARET] + '\\s+'
-re[t.CARETTRIM] = new RegExp(src[t.CARETTRIM], 'g')
-safeRe[t.CARETTRIM] = new RegExp(makeSafeRe(src[t.CARETTRIM]), 'g')
-var caretTrimReplace = '$1^'
-
-tok('CARET')
-src[t.CARET] = '^' + src[t.LONECARET] + src[t.XRANGEPLAIN] + '$'
-tok('CARETLOOSE')
-src[t.CARETLOOSE] = '^' + src[t.LONECARET] + src[t.XRANGEPLAINLOOSE] + '$'
-
-// A simple gt/lt/eq thing, or just "" to indicate "any version"
-tok('COMPARATORLOOSE')
-src[t.COMPARATORLOOSE] = '^' + src[t.GTLT] + '\\s*(' + src[t.LOOSEPLAIN] + ')$|^$'
-tok('COMPARATOR')
-src[t.COMPARATOR] = '^' + src[t.GTLT] + '\\s*(' + src[t.FULLPLAIN] + ')$|^$'
-
-// An expression to strip any whitespace between the gtlt and the thing
-// it modifies, so that `> 1.2.3` ==> `>1.2.3`
-tok('COMPARATORTRIM')
-src[t.COMPARATORTRIM] = '(\\s*)' + src[t.GTLT] +
-                      '\\s*(' + src[t.LOOSEPLAIN] + '|' + src[t.XRANGEPLAIN] + ')'
-
-// this one has to use the /g flag
-re[t.COMPARATORTRIM] = new RegExp(src[t.COMPARATORTRIM], 'g')
-safeRe[t.COMPARATORTRIM] = new RegExp(makeSafeRe(src[t.COMPARATORTRIM]), 'g')
-var comparatorTrimReplace = '$1$2$3'
-
-// Something like `1.2.3 - 1.2.4`
-// Note that these all use the loose form, because they'll be
-// checked against either the strict or loose comparator form
-// later.
-tok('HYPHENRANGE')
-src[t.HYPHENRANGE] = '^\\s*(' + src[t.XRANGEPLAIN] + ')' +
-                   '\\s+-\\s+' +
-                   '(' + src[t.XRANGEPLAIN] + ')' +
-                   '\\s*$'
-
-tok('HYPHENRANGELOOSE')
-src[t.HYPHENRANGELOOSE] = '^\\s*(' + src[t.XRANGEPLAINLOOSE] + ')' +
-                        '\\s+-\\s+' +
-                        '(' + src[t.XRANGEPLAINLOOSE] + ')' +
-                        '\\s*$'
-
-// Star ranges basically just allow anything at all.
-tok('STAR')
-src[t.STAR] = '(<|>)?=?\\s*\\*'
-
-// Compile to actual regexp objects.
-// All are flag-free, unless they were created above with a flag.
-for (var i = 0; i < R; i++) {
-  debug(i, src[i])
-  if (!re[i]) {
-    re[i] = new RegExp(src[i])
-
-    // Replace all greedy whitespace to prevent regex dos issues. These regex are
-    // used internally via the safeRe object since all inputs in this library get
-    // normalized first to trim and collapse all extra whitespace. The original
-    // regexes are exported for userland consumption and lower level usage. A
-    // future breaking change could export the safer regex only with a note that
-    // all input should have extra whitespace removed.
-    safeRe[i] = new RegExp(makeSafeRe(src[i]))
-  }
-}
-
-exports.parse = parse
-function parse (version, options) {
-  if (!options || typeof options !== 'object') {
-    options = {
-      loose: !!options,
-      includePrerelease: false
-    }
-  }
-
-  if (version instanceof SemVer) {
-    return version
-  }
-
-  if (typeof version !== 'string') {
-    return null
-  }
-
-  if (version.length > MAX_LENGTH) {
-    return null
-  }
-
-  var r = options.loose ? safeRe[t.LOOSE] : safeRe[t.FULL]
-  if (!r.test(version)) {
-    return null
-  }
-
-  try {
-    return new SemVer(version, options)
-  } catch (er) {
-    return null
-  }
-}
-
-exports.valid = valid
-function valid (version, options) {
-  var v = parse(version, options)
-  return v ? v.version : null
-}
-
-exports.clean = clean
-function clean (version, options) {
-  var s = parse(version.trim().replace(/^[=v]+/, ''), options)
-  return s ? s.version : null
-}
-
-exports.SemVer = SemVer
-
-function SemVer (version, options) {
-  if (!options || typeof options !== 'object') {
-    options = {
-      loose: !!options,
-      includePrerelease: false
-    }
-  }
-  if (version instanceof SemVer) {
-    if (version.loose === options.loose) {
-      return version
-    } else {
-      version = version.version
-    }
-  } else if (typeof version !== 'string') {
-    throw new TypeError('Invalid Version: ' + version)
-  }
-
-  if (version.length > MAX_LENGTH) {
-    throw new TypeError('version is longer than ' + MAX_LENGTH + ' characters')
-  }
-
-  if (!(this instanceof SemVer)) {
-    return new SemVer(version, options)
-  }
-
-  debug('SemVer', version, options)
-  this.options = options
-  this.loose = !!options.loose
-
-  var m = version.trim().match(options.loose ? safeRe[t.LOOSE] : safeRe[t.FULL])
-
-  if (!m) {
-    throw new TypeError('Invalid Version: ' + version)
-  }
-
-  this.raw = version
-
-  // these are actually numbers
-  this.major = +m[1]
-  this.minor = +m[2]
-  this.patch = +m[3]
-
-  if (this.major > MAX_SAFE_INTEGER || this.major < 0) {
-    throw new TypeError('Invalid major version')
-  }
-
-  if (this.minor > MAX_SAFE_INTEGER || this.minor < 0) {
-    throw new TypeError('Invalid minor version')
-  }
-
-  if (this.patch > MAX_SAFE_INTEGER || this.patch < 0) {
-    throw new TypeError('Invalid patch version')
-  }
-
-  // numberify any prerelease numeric ids
-  if (!m[4]) {
-    this.prerelease = []
-  } else {
-    this.prerelease = m[4].split('.').map(function (id) {
-      if (/^[0-9]+$/.test(id)) {
-        var num = +id
-        if (num >= 0 && num < MAX_SAFE_INTEGER) {
-          return num
-        }
-      }
-      return id
-    })
-  }
-
-  this.build = m[5] ? m[5].split('.') : []
-  this.format()
-}
-
-SemVer.prototype.format = function () {
-  this.version = this.major + '.' + this.minor + '.' + this.patch
-  if (this.prerelease.length) {
-    this.version += '-' + this.prerelease.join('.')
-  }
-  return this.version
-}
-
-SemVer.prototype.toString = function () {
-  return this.version
-}
-
-SemVer.prototype.compare = function (other) {
-  debug('SemVer.compare', this.version, this.options, other)
-  if (!(other instanceof SemVer)) {
-    other = new SemVer(other, this.options)
-  }
-
-  return this.compareMain(other) || this.comparePre(other)
-}
-
-SemVer.prototype.compareMain = function (other) {
-  if (!(other instanceof SemVer)) {
-    other = new SemVer(other, this.options)
-  }
-
-  return compareIdentifiers(this.major, other.major) ||
-         compareIdentifiers(this.minor, other.minor) ||
-         compareIdentifiers(this.patch, other.patch)
-}
-
-SemVer.prototype.comparePre = function (other) {
-  if (!(other instanceof SemVer)) {
-    other = new SemVer(other, this.options)
-  }
-
-  // NOT having a prerelease is > having one
-  if (this.prerelease.length && !other.prerelease.length) {
-    return -1
-  } else if (!this.prerelease.length && other.prerelease.length) {
-    return 1
-  } else if (!this.prerelease.length && !other.prerelease.length) {
-    return 0
-  }
-
-  var i = 0
-  do {
-    var a = this.prerelease[i]
-    var b = other.prerelease[i]
-    debug('prerelease compare', i, a, b)
-    if (a === undefined && b === undefined) {
-      return 0
-    } else if (b === undefined) {
-      return 1
-    } else if (a === undefined) {
-      return -1
-    } else if (a === b) {
-      continue
-    } else {
-      return compareIdentifiers(a, b)
-    }
-  } while (++i)
-}
-
-SemVer.prototype.compareBuild = function (other) {
-  if (!(other instanceof SemVer)) {
-    other = new SemVer(other, this.options)
-  }
-
-  var i = 0
-  do {
-    var a = this.build[i]
-    var b = other.build[i]
-    debug('prerelease compare', i, a, b)
-    if (a === undefined && b === undefined) {
-      return 0
-    } else if (b === undefined) {
-      return 1
-    } else if (a === undefined) {
-      return -1
-    } else if (a === b) {
-      continue
-    } else {
-      return compareIdentifiers(a, b)
-    }
-  } while (++i)
-}
-
-// preminor will bump the version up to the next minor release, and immediately
-// down to pre-release. premajor and prepatch work the same way.
-SemVer.prototype.inc = function (release, identifier) {
-  switch (release) {
-    case 'premajor':
-      this.prerelease.length = 0
-      this.patch = 0
-      this.minor = 0
-      this.major++
-      this.inc('pre', identifier)
-      break
-    case 'preminor':
-      this.prerelease.length = 0
-      this.patch = 0
-      this.minor++
-      this.inc('pre', identifier)
-      break
-    case 'prepatch':
-      // If this is already a prerelease, it will bump to the next version
-      // drop any prereleases that might already exist, since they are not
-      // relevant at this point.
-      this.prerelease.length = 0
-      this.inc('patch', identifier)
-      this.inc('pre', identifier)
-      break
-    // If the input is a non-prerelease version, this acts the same as
-    // prepatch.
-    case 'prerelease':
-      if (this.prerelease.length === 0) {
-        this.inc('patch', identifier)
-      }
-      this.inc('pre', identifier)
-      break
-
-    case 'major':
-      // If this is a pre-major version, bump up to the same major version.
-      // Otherwise increment major.
-      // 1.0.0-5 bumps to 1.0.0
-      // 1.1.0 bumps to 2.0.0
-      if (this.minor !== 0 ||
-          this.patch !== 0 ||
-          this.prerelease.length === 0) {
-        this.major++
-      }
-      this.minor = 0
-      this.patch = 0
-      this.prerelease = []
-      break
-    case 'minor':
-      // If this is a pre-minor version, bump up to the same minor version.
-      // Otherwise increment minor.
-      // 1.2.0-5 bumps to 1.2.0
-      // 1.2.1 bumps to 1.3.0
-      if (this.patch !== 0 || this.prerelease.length === 0) {
-        this.minor++
-      }
-      this.patch = 0
-      this.prerelease = []
-      break
-    case 'patch':
-      // If this is not a pre-release version, it will increment the patch.
-      // If it is a pre-release it will bump up to the same patch version.
-      // 1.2.0-5 patches to 1.2.0
-      // 1.2.0 patches to 1.2.1
-      if (this.prerelease.length === 0) {
-        this.patch++
-      }
-      this.prerelease = []
-      break
-    // This probably shouldn't be used publicly.
-    // 1.0.0 "pre" would become 1.0.0-0 which is the wrong direction.
-    case 'pre':
-      if (this.prerelease.length === 0) {
-        this.prerelease = [0]
-      } else {
-        var i = this.prerelease.length
-        while (--i >= 0) {
-          if (typeof this.prerelease[i] === 'number') {
-            this.prerelease[i]++
-            i = -2
-          }
-        }
-        if (i === -1) {
-          // didn't increment anything
-          this.prerelease.push(0)
-        }
-      }
-      if (identifier) {
-        // 1.2.0-beta.1 bumps to 1.2.0-beta.2,
-        // 1.2.0-beta.fooblz or 1.2.0-beta bumps to 1.2.0-beta.0
-        if (this.prerelease[0] === identifier) {
-          if (isNaN(this.prerelease[1])) {
-            this.prerelease = [identifier, 0]
-          }
-        } else {
-          this.prerelease = [identifier, 0]
-        }
-      }
-      break
-
-    default:
-      throw new Error('invalid increment argument: ' + release)
-  }
-  this.format()
-  this.raw = this.version
-  return this
-}
-
-exports.inc = inc
-function inc (version, release, loose, identifier) {
-  if (typeof (loose) === 'string') {
-    identifier = loose
-    loose = undefined
-  }
-
-  try {
-    return new SemVer(version, loose).inc(release, identifier).version
-  } catch (er) {
-    return null
-  }
-}
-
-exports.diff = diff
-function diff (version1, version2) {
-  if (eq(version1, version2)) {
-    return null
-  } else {
-    var v1 = parse(version1)
-    var v2 = parse(version2)
-    var prefix = ''
-    if (v1.prerelease.length || v2.prerelease.length) {
-      prefix = 'pre'
-      var defaultResult = 'prerelease'
-    }
-    for (var key in v1) {
-      if (key === 'major' || key === 'minor' || key === 'patch') {
-        if (v1[key] !== v2[key]) {
-          return prefix + key
-        }
-      }
-    }
-    return defaultResult // may be undefined
-  }
-}
-
-exports.compareIdentifiers = compareIdentifiers
-
-var numeric = /^[0-9]+$/
-function compareIdentifiers (a, b) {
-  var anum = numeric.test(a)
-  var bnum = numeric.test(b)
-
-  if (anum && bnum) {
-    a = +a
-    b = +b
-  }
-
-  return a === b ? 0
-    : (anum && !bnum) ? -1
-    : (bnum && !anum) ? 1
-    : a < b ? -1
-    : 1
-}
-
-exports.rcompareIdentifiers = rcompareIdentifiers
-function rcompareIdentifiers (a, b) {
-  return compareIdentifiers(b, a)
-}
-
-exports.major = major
-function major (a, loose) {
-  return new SemVer(a, loose).major
-}
-
-exports.minor = minor
-function minor (a, loose) {
-  return new SemVer(a, loose).minor
-}
-
-exports.patch = patch
-function patch (a, loose) {
-  return new SemVer(a, loose).patch
-}
-
-exports.compare = compare
-function compare (a, b, loose) {
-  return new SemVer(a, loose).compare(new SemVer(b, loose))
-}
-
-exports.compareLoose = compareLoose
-function compareLoose (a, b) {
-  return compare(a, b, true)
-}
-
-exports.compareBuild = compareBuild
-function compareBuild (a, b, loose) {
-  var versionA = new SemVer(a, loose)
-  var versionB = new SemVer(b, loose)
-  return versionA.compare(versionB) || versionA.compareBuild(versionB)
-}
-
-exports.rcompare = rcompare
-function rcompare (a, b, loose) {
-  return compare(b, a, loose)
-}
-
-exports.sort = sort
-function sort (list, loose) {
-  return list.sort(function (a, b) {
-    return exports.compareBuild(a, b, loose)
-  })
-}
-
-exports.rsort = rsort
-function rsort (list, loose) {
-  return list.sort(function (a, b) {
-    return exports.compareBuild(b, a, loose)
-  })
-}
-
-exports.gt = gt
-function gt (a, b, loose) {
-  return compare(a, b, loose) > 0
-}
-
-exports.lt = lt
-function lt (a, b, loose) {
-  return compare(a, b, loose) < 0
-}
-
-exports.eq = eq
-function eq (a, b, loose) {
-  return compare(a, b, loose) === 0
-}
-
-exports.neq = neq
-function neq (a, b, loose) {
-  return compare(a, b, loose) !== 0
-}
-
-exports.gte = gte
-function gte (a, b, loose) {
-  return compare(a, b, loose) >= 0
-}
-
-exports.lte = lte
-function lte (a, b, loose) {
-  return compare(a, b, loose) <= 0
-}
-
-exports.cmp = cmp
-function cmp (a, op, b, loose) {
-  switch (op) {
-    case '===':
-      if (typeof a === 'object')
-        a = a.version
-      if (typeof b === 'object')
-        b = b.version
-      return a === b
-
-    case '!==':
-      if (typeof a === 'object')
-        a = a.version
-      if (typeof b === 'object')
-        b = b.version
-      return a !== b
-
-    case '':
-    case '=':
-    case '==':
-      return eq(a, b, loose)
-
-    case '!=':
-      return neq(a, b, loose)
-
-    case '>':
-      return gt(a, b, loose)
-
-    case '>=':
-      return gte(a, b, loose)
-
-    case '<':
-      return lt(a, b, loose)
-
-    case '<=':
-      return lte(a, b, loose)
-
-    default:
-      throw new TypeError('Invalid operator: ' + op)
-  }
-}
-
-exports.Comparator = Comparator
-function Comparator (comp, options) {
-  if (!options || typeof options !== 'object') {
-    options = {
-      loose: !!options,
-      includePrerelease: false
-    }
-  }
-
-  if (comp instanceof Comparator) {
-    if (comp.loose === !!options.loose) {
-      return comp
-    } else {
-      comp = comp.value
-    }
-  }
-
-  if (!(this instanceof Comparator)) {
-    return new Comparator(comp, options)
-  }
-
-  comp = comp.trim().split(/\s+/).join(' ')
-  debug('comparator', comp, options)
-  this.options = options
-  this.loose = !!options.loose
-  this.parse(comp)
-
-  if (this.semver === ANY) {
-    this.value = ''
-  } else {
-    this.value = this.operator + this.semver.version
-  }
-
-  debug('comp', this)
-}
-
-var ANY = {}
-Comparator.prototype.parse = function (comp) {
-  var r = this.options.loose ? safeRe[t.COMPARATORLOOSE] : safeRe[t.COMPARATOR]
-  var m = comp.match(r)
-
-  if (!m) {
-    throw new TypeError('Invalid comparator: ' + comp)
-  }
-
-  this.operator = m[1] !== undefined ? m[1] : ''
-  if (this.operator === '=') {
-    this.operator = ''
-  }
-
-  // if it literally is just '>' or '' then allow anything.
-  if (!m[2]) {
-    this.semver = ANY
-  } else {
-    this.semver = new SemVer(m[2], this.options.loose)
-  }
-}
-
-Comparator.prototype.toString = function () {
-  return this.value
-}
-
-Comparator.prototype.test = function (version) {
-  debug('Comparator.test', version, this.options.loose)
-
-  if (this.semver === ANY || version === ANY) {
-    return true
-  }
-
-  if (typeof version === 'string') {
-    try {
-      version = new SemVer(version, this.options)
-    } catch (er) {
-      return false
-    }
-  }
-
-  return cmp(version, this.operator, this.semver, this.options)
-}
-
-Comparator.prototype.intersects = function (comp, options) {
-  if (!(comp instanceof Comparator)) {
-    throw new TypeError('a Comparator is required')
-  }
-
-  if (!options || typeof options !== 'object') {
-    options = {
-      loose: !!options,
-      includePrerelease: false
-    }
-  }
-
-  var rangeTmp
-
-  if (this.operator === '') {
-    if (this.value === '') {
-      return true
-    }
-    rangeTmp = new Range(comp.value, options)
-    return satisfies(this.value, rangeTmp, options)
-  } else if (comp.operator === '') {
-    if (comp.value === '') {
-      return true
-    }
-    rangeTmp = new Range(this.value, options)
-    return satisfies(comp.semver, rangeTmp, options)
-  }
-
-  var sameDirectionIncreasing =
-    (this.operator === '>=' || this.operator === '>') &&
-    (comp.operator === '>=' || comp.operator === '>')
-  var sameDirectionDecreasing =
-    (this.operator === '<=' || this.operator === '<') &&
-    (comp.operator === '<=' || comp.operator === '<')
-  var sameSemVer = this.semver.version === comp.semver.version
-  var differentDirectionsInclusive =
-    (this.operator === '>=' || this.operator === '<=') &&
-    (comp.operator === '>=' || comp.operator === '<=')
-  var oppositeDirectionsLessThan =
-    cmp(this.semver, '<', comp.semver, options) &&
-    ((this.operator === '>=' || this.operator === '>') &&
-    (comp.operator === '<=' || comp.operator === '<'))
-  var oppositeDirectionsGreaterThan =
-    cmp(this.semver, '>', comp.semver, options) &&
-    ((this.operator === '<=' || this.operator === '<') &&
-    (comp.operator === '>=' || comp.operator === '>'))
-
-  return sameDirectionIncreasing || sameDirectionDecreasing ||
-    (sameSemVer && differentDirectionsInclusive) ||
-    oppositeDirectionsLessThan || oppositeDirectionsGreaterThan
-}
-
-exports.Range = Range
-function Range (range, options) {
-  if (!options || typeof options !== 'object') {
-    options = {
-      loose: !!options,
-      includePrerelease: false
-    }
-  }
-
-  if (range instanceof Range) {
-    if (range.loose === !!options.loose &&
-        range.includePrerelease === !!options.includePrerelease) {
-      return range
-    } else {
-      return new Range(range.raw, options)
-    }
-  }
-
-  if (range instanceof Comparator) {
-    return new Range(range.value, options)
-  }
-
-  if (!(this instanceof Range)) {
-    return new Range(range, options)
-  }
-
-  this.options = options
-  this.loose = !!options.loose
-  this.includePrerelease = !!options.includePrerelease
-
-  // First reduce all whitespace as much as possible so we do not have to rely
-  // on potentially slow regexes like \s*. This is then stored and used for
-  // future error messages as well.
-  this.raw = range
-    .trim()
-    .split(/\s+/)
-    .join(' ')
-
-  // First, split based on boolean or ||
-  this.set = this.raw.split('||').map(function (range) {
-    return this.parseRange(range.trim())
-  }, this).filter(function (c) {
-    // throw out any that are not relevant for whatever reason
-    return c.length
-  })
-
-  if (!this.set.length) {
-    throw new TypeError('Invalid SemVer Range: ' + this.raw)
-  }
-
-  this.format()
-}
-
-Range.prototype.format = function () {
-  this.range = this.set.map(function (comps) {
-    return comps.join(' ').trim()
-  }).join('||').trim()
-  return this.range
-}
-
-Range.prototype.toString = function () {
-  return this.range
-}
-
-Range.prototype.parseRange = function (range) {
-  var loose = this.options.loose
-  // `1.2.3 - 1.2.4` => `>=1.2.3 <=1.2.4`
-  var hr = loose ? safeRe[t.HYPHENRANGELOOSE] : safeRe[t.HYPHENRANGE]
-  range = range.replace(hr, hyphenReplace)
-  debug('hyphen replace', range)
-  // `> 1.2.3 < 1.2.5` => `>1.2.3 <1.2.5`
-  range = range.replace(safeRe[t.COMPARATORTRIM], comparatorTrimReplace)
-  debug('comparator trim', range, safeRe[t.COMPARATORTRIM])
-
-  // `~ 1.2.3` => `~1.2.3`
-  range = range.replace(safeRe[t.TILDETRIM], tildeTrimReplace)
-
-  // `^ 1.2.3` => `^1.2.3`
-  range = range.replace(safeRe[t.CARETTRIM], caretTrimReplace)
-
-  // normalize spaces
-  range = range.split(/\s+/).join(' ')
-
-  // At this point, the range is completely trimmed and
-  // ready to be split into comparators.
-
-  var compRe = loose ? safeRe[t.COMPARATORLOOSE] : safeRe[t.COMPARATOR]
-  var set = range.split(' ').map(function (comp) {
-    return parseComparator(comp, this.options)
-  }, this).join(' ').split(/\s+/)
-  if (this.options.loose) {
-    // in loose mode, throw out any that are not valid comparators
-    set = set.filter(function (comp) {
-      return !!comp.match(compRe)
-    })
-  }
-  set = set.map(function (comp) {
-    return new Comparator(comp, this.options)
-  }, this)
-
-  return set
-}
-
-Range.prototype.intersects = function (range, options) {
-  if (!(range instanceof Range)) {
-    throw new TypeError('a Range is required')
-  }
-
-  return this.set.some(function (thisComparators) {
-    return (
-      isSatisfiable(thisComparators, options) &&
-      range.set.some(function (rangeComparators) {
-        return (
-          isSatisfiable(rangeComparators, options) &&
-          thisComparators.every(function (thisComparator) {
-            return rangeComparators.every(function (rangeComparator) {
-              return thisComparator.intersects(rangeComparator, options)
-            })
-          })
-        )
-      })
-    )
-  })
-}
-
-// take a set of comparators and determine whether there
-// exists a version which can satisfy it
-function isSatisfiable (comparators, options) {
-  var result = true
-  var remainingComparators = comparators.slice()
-  var testComparator = remainingComparators.pop()
-
-  while (result && remainingComparators.length) {
-    result = remainingComparators.every(function (otherComparator) {
-      return testComparator.intersects(otherComparator, options)
-    })
-
-    testComparator = remainingComparators.pop()
-  }
-
-  return result
-}
-
-// Mostly just for testing and legacy API reasons
-exports.toComparators = toComparators
-function toComparators (range, options) {
-  return new Range(range, options).set.map(function (comp) {
-    return comp.map(function (c) {
-      return c.value
-    }).join(' ').trim().split(' ')
-  })
-}
-
-// comprised of xranges, tildes, stars, and gtlt's at this point.
-// already replaced the hyphen ranges
-// turn into a set of JUST comparators.
-function parseComparator (comp, options) {
-  debug('comp', comp, options)
-  comp = replaceCarets(comp, options)
-  debug('caret', comp)
-  comp = replaceTildes(comp, options)
-  debug('tildes', comp)
-  comp = replaceXRanges(comp, options)
-  debug('xrange', comp)
-  comp = replaceStars(comp, options)
-  debug('stars', comp)
-  return comp
-}
-
-function isX (id) {
-  return !id || id.toLowerCase() === 'x' || id === '*'
-}
-
-// ~, ~> --> * (any, kinda silly)
-// ~2, ~2.x, ~2.x.x, ~>2, ~>2.x ~>2.x.x --> >=2.0.0 <3.0.0
-// ~2.0, ~2.0.x, ~>2.0, ~>2.0.x --> >=2.0.0 <2.1.0
-// ~1.2, ~1.2.x, ~>1.2, ~>1.2.x --> >=1.2.0 <1.3.0
-// ~1.2.3, ~>1.2.3 --> >=1.2.3 <1.3.0
-// ~1.2.0, ~>1.2.0 --> >=1.2.0 <1.3.0
-function replaceTildes (comp, options) {
-  return comp.trim().split(/\s+/).map(function (comp) {
-    return replaceTilde(comp, options)
-  }).join(' ')
-}
-
-function replaceTilde (comp, options) {
-  var r = options.loose ? safeRe[t.TILDELOOSE] : safeRe[t.TILDE]
-  return comp.replace(r, function (_, M, m, p, pr) {
-    debug('tilde', comp, _, M, m, p, pr)
-    var ret
-
-    if (isX(M)) {
-      ret = ''
-    } else if (isX(m)) {
-      ret = '>=' + M + '.0.0 <' + (+M + 1) + '.0.0'
-    } else if (isX(p)) {
-      // ~1.2 == >=1.2.0 <1.3.0
-      ret = '>=' + M + '.' + m + '.0 <' + M + '.' + (+m + 1) + '.0'
-    } else if (pr) {
-      debug('replaceTilde pr', pr)
-      ret = '>=' + M + '.' + m + '.' + p + '-' + pr +
-            ' <' + M + '.' + (+m + 1) + '.0'
-    } else {
-      // ~1.2.3 == >=1.2.3 <1.3.0
-      ret = '>=' + M + '.' + m + '.' + p +
-            ' <' + M + '.' + (+m + 1) + '.0'
-    }
-
-    debug('tilde return', ret)
-    return ret
-  })
-}
-
-// ^ --> * (any, kinda silly)
-// ^2, ^2.x, ^2.x.x --> >=2.0.0 <3.0.0
-// ^2.0, ^2.0.x --> >=2.0.0 <3.0.0
-// ^1.2, ^1.2.x --> >=1.2.0 <2.0.0
-// ^1.2.3 --> >=1.2.3 <2.0.0
-// ^1.2.0 --> >=1.2.0 <2.0.0
-function replaceCarets (comp, options) {
-  return comp.trim().split(/\s+/).map(function (comp) {
-    return replaceCaret(comp, options)
-  }).join(' ')
-}
-
-function replaceCaret (comp, options) {
-  debug('caret', comp, options)
-  var r = options.loose ? safeRe[t.CARETLOOSE] : safeRe[t.CARET]
-  return comp.replace(r, function (_, M, m, p, pr) {
-    debug('caret', comp, _, M, m, p, pr)
-    var ret
-
-    if (isX(M)) {
-      ret = ''
-    } else if (isX(m)) {
-      ret = '>=' + M + '.0.0 <' + (+M + 1) + '.0.0'
-    } else if (isX(p)) {
-      if (M === '0') {
-        ret = '>=' + M + '.' + m + '.0 <' + M + '.' + (+m + 1) + '.0'
-      } else {
-        ret = '>=' + M + '.' + m + '.0 <' + (+M + 1) + '.0.0'
-      }
-    } else if (pr) {
-      debug('replaceCaret pr', pr)
-      if (M === '0') {
-        if (m === '0') {
-          ret = '>=' + M + '.' + m + '.' + p + '-' + pr +
-                ' <' + M + '.' + m + '.' + (+p + 1)
-        } else {
-          ret = '>=' + M + '.' + m + '.' + p + '-' + pr +
-                ' <' + M + '.' + (+m + 1) + '.0'
-        }
-      } else {
-        ret = '>=' + M + '.' + m + '.' + p + '-' + pr +
-              ' <' + (+M + 1) + '.0.0'
-      }
-    } else {
-      debug('no pr')
-      if (M === '0') {
-        if (m === '0') {
-          ret = '>=' + M + '.' + m + '.' + p +
-                ' <' + M + '.' + m + '.' + (+p + 1)
-        } else {
-          ret = '>=' + M + '.' + m + '.' + p +
-                ' <' + M + '.' + (+m + 1) + '.0'
-        }
-      } else {
-        ret = '>=' + M + '.' + m + '.' + p +
-              ' <' + (+M + 1) + '.0.0'
-      }
-    }
-
-    debug('caret return', ret)
-    return ret
-  })
-}
-
-function replaceXRanges (comp, options) {
-  debug('replaceXRanges', comp, options)
-  return comp.split(/\s+/).map(function (comp) {
-    return replaceXRange(comp, options)
-  }).join(' ')
-}
-
-function replaceXRange (comp, options) {
-  comp = comp.trim()
-  var r = options.loose ? safeRe[t.XRANGELOOSE] : safeRe[t.XRANGE]
-  return comp.replace(r, function (ret, gtlt, M, m, p, pr) {
-    debug('xRange', comp, ret, gtlt, M, m, p, pr)
-    var xM = isX(M)
-    var xm = xM || isX(m)
-    var xp = xm || isX(p)
-    var anyX = xp
-
-    if (gtlt === '=' && anyX) {
-      gtlt = ''
-    }
-
-    // if we're including prereleases in the match, then we need
-    // to fix this to -0, the lowest possible prerelease value
-    pr = options.includePrerelease ? '-0' : ''
-
-    if (xM) {
-      if (gtlt === '>' || gtlt === '<') {
-        // nothing is allowed
-        ret = '<0.0.0-0'
-      } else {
-        // nothing is forbidden
-        ret = '*'
-      }
-    } else if (gtlt && anyX) {
-      // we know patch is an x, because we have any x at all.
-      // replace X with 0
-      if (xm) {
-        m = 0
-      }
-      p = 0
-
-      if (gtlt === '>') {
-        // >1 => >=2.0.0
-        // >1.2 => >=1.3.0
-        // >1.2.3 => >= 1.2.4
-        gtlt = '>='
-        if (xm) {
-          M = +M + 1
-          m = 0
-          p = 0
-        } else {
-          m = +m + 1
-          p = 0
-        }
-      } else if (gtlt === '<=') {
-        // <=0.7.x is actually <0.8.0, since any 0.7.x should
-        // pass.  Similarly, <=7.x is actually <8.0.0, etc.
-        gtlt = '<'
-        if (xm) {
-          M = +M + 1
-        } else {
-          m = +m + 1
-        }
-      }
-
-      ret = gtlt + M + '.' + m + '.' + p + pr
-    } else if (xm) {
-      ret = '>=' + M + '.0.0' + pr + ' <' + (+M + 1) + '.0.0' + pr
-    } else if (xp) {
-      ret = '>=' + M + '.' + m + '.0' + pr +
-        ' <' + M + '.' + (+m + 1) + '.0' + pr
-    }
-
-    debug('xRange return', ret)
-
-    return ret
-  })
-}
-
-// Because * is AND-ed with everything else in the comparator,
-// and '' means "any version", just remove the *s entirely.
-function replaceStars (comp, options) {
-  debug('replaceStars', comp, options)
-  // Looseness is ignored here.  star is always as loose as it gets!
-  return comp.trim().replace(safeRe[t.STAR], '')
-}
-
-// This function is passed to string.replace(re[t.HYPHENRANGE])
-// M, m, patch, prerelease, build
-// 1.2 - 3.4.5 => >=1.2.0 <=3.4.5
-// 1.2.3 - 3.4 => >=1.2.0 <3.5.0 Any 3.4.x will do
-// 1.2 - 3.4 => >=1.2.0 <3.5.0
-function hyphenReplace ($0,
-  from, fM, fm, fp, fpr, fb,
-  to, tM, tm, tp, tpr, tb) {
-  if (isX(fM)) {
-    from = ''
-  } else if (isX(fm)) {
-    from = '>=' + fM + '.0.0'
-  } else if (isX(fp)) {
-    from = '>=' + fM + '.' + fm + '.0'
-  } else {
-    from = '>=' + from
-  }
-
-  if (isX(tM)) {
-    to = ''
-  } else if (isX(tm)) {
-    to = '<' + (+tM + 1) + '.0.0'
-  } else if (isX(tp)) {
-    to = '<' + tM + '.' + (+tm + 1) + '.0'
-  } else if (tpr) {
-    to = '<=' + tM + '.' + tm + '.' + tp + '-' + tpr
-  } else {
-    to = '<=' + to
-  }
-
-  return (from + ' ' + to).trim()
-}
-
-// if ANY of the sets match ALL of its comparators, then pass
-Range.prototype.test = function (version) {
-  if (!version) {
-    return false
-  }
-
-  if (typeof version === 'string') {
-    try {
-      version = new SemVer(version, this.options)
-    } catch (er) {
-      return false
-    }
-  }
-
-  for (var i = 0; i < this.set.length; i++) {
-    if (testSet(this.set[i], version, this.options)) {
-      return true
-    }
-  }
-  return false
-}
-
-function testSet (set, version, options) {
-  for (var i = 0; i < set.length; i++) {
-    if (!set[i].test(version)) {
-      return false
-    }
-  }
-
-  if (version.prerelease.length && !options.includePrerelease) {
-    // Find the set of versions that are allowed to have prereleases
-    // For example, ^1.2.3-pr.1 desugars to >=1.2.3-pr.1 <2.0.0
-    // That should allow `1.2.3-pr.2` to pass.
-    // However, `1.2.4-alpha.notready` should NOT be allowed,
-    // even though it's within the range set by the comparators.
-    for (i = 0; i < set.length; i++) {
-      debug(set[i].semver)
-      if (set[i].semver === ANY) {
-        continue
-      }
-
-      if (set[i].semver.prerelease.length > 0) {
-        var allowed = set[i].semver
-        if (allowed.major === version.major &&
-            allowed.minor === version.minor &&
-            allowed.patch === version.patch) {
-          return true
-        }
-      }
-    }
-
-    // Version has a -pre, but it's not one of the ones we like.
-    return false
-  }
-
-  return true
-}
-
-exports.satisfies = satisfies
-function satisfies (version, range, options) {
-  try {
-    range = new Range(range, options)
-  } catch (er) {
-    return false
-  }
-  return range.test(version)
-}
-
-exports.maxSatisfying = maxSatisfying
-function maxSatisfying (versions, range, options) {
-  var max = null
-  var maxSV = null
-  try {
-    var rangeObj = new Range(range, options)
-  } catch (er) {
-    return null
-  }
-  versions.forEach(function (v) {
-    if (rangeObj.test(v)) {
-      // satisfies(v, range, options)
-      if (!max || maxSV.compare(v) === -1) {
-        // compare(max, v, true)
-        max = v
-        maxSV = new SemVer(max, options)
-      }
-    }
-  })
-  return max
-}
-
-exports.minSatisfying = minSatisfying
-function minSatisfying (versions, range, options) {
-  var min = null
-  var minSV = null
-  try {
-    var rangeObj = new Range(range, options)
-  } catch (er) {
-    return null
-  }
-  versions.forEach(function (v) {
-    if (rangeObj.test(v)) {
-      // satisfies(v, range, options)
-      if (!min || minSV.compare(v) === 1) {
-        // compare(min, v, true)
-        min = v
-        minSV = new SemVer(min, options)
-      }
-    }
-  })
-  return min
-}
-
-exports.minVersion = minVersion
-function minVersion (range, loose) {
-  range = new Range(range, loose)
-
-  var minver = new SemVer('0.0.0')
-  if (range.test(minver)) {
-    return minver
-  }
-
-  minver = new SemVer('0.0.0-0')
-  if (range.test(minver)) {
-    return minver
-  }
-
-  minver = null
-  for (var i = 0; i < range.set.length; ++i) {
-    var comparators = range.set[i]
-
-    comparators.forEach(function (comparator) {
-      // Clone to avoid manipulating the comparator's semver object.
-      var compver = new SemVer(comparator.semver.version)
-      switch (comparator.operator) {
-        case '>':
-          if (compver.prerelease.length === 0) {
-            compver.patch++
-          } else {
-            compver.prerelease.push(0)
-          }
-          compver.raw = compver.format()
-          /* fallthrough */
-        case '':
-        case '>=':
-          if (!minver || gt(minver, compver)) {
-            minver = compver
-          }
-          break
-        case '<':
-        case '<=':
-          /* Ignore maximum versions */
-          break
-        /* istanbul ignore next */
-        default:
-          throw new Error('Unexpected operation: ' + comparator.operator)
-      }
-    })
-  }
-
-  if (minver && range.test(minver)) {
-    return minver
-  }
-
-  return null
-}
-
-exports.validRange = validRange
-function validRange (range, options) {
-  try {
-    // Return '*' instead of '' so that truthiness works.
-    // This will throw if it's invalid anyway
-    return new Range(range, options).range || '*'
-  } catch (er) {
-    return null
-  }
-}
-
-// Determine if version is less than all the versions possible in the range
-exports.ltr = ltr
-function ltr (version, range, options) {
-  return outside(version, range, '<', options)
-}
-
-// Determine if version is greater than all the versions possible in the range.
-exports.gtr = gtr
-function gtr (version, range, options) {
-  return outside(version, range, '>', options)
-}
-
-exports.outside = outside
-function outside (version, range, hilo, options) {
-  version = new SemVer(version, options)
-  range = new Range(range, options)
-
-  var gtfn, ltefn, ltfn, comp, ecomp
-  switch (hilo) {
-    case '>':
-      gtfn = gt
-      ltefn = lte
-      ltfn = lt
-      comp = '>'
-      ecomp = '>='
-      break
-    case '<':
-      gtfn = lt
-      ltefn = gte
-      ltfn = gt
-      comp = '<'
-      ecomp = '<='
-      break
-    default:
-      throw new TypeError('Must provide a hilo val of "<" or ">"')
-  }
-
-  // If it satisifes the range it is not outside
-  if (satisfies(version, range, options)) {
-    return false
-  }
-
-  // From now on, variable terms are as if we're in "gtr" mode.
-  // but note that everything is flipped for the "ltr" function.
-
-  for (var i = 0; i < range.set.length; ++i) {
-    var comparators = range.set[i]
-
-    var high = null
-    var low = null
-
-    comparators.forEach(function (comparator) {
-      if (comparator.semver === ANY) {
-        comparator = new Comparator('>=0.0.0')
-      }
-      high = high || comparator
-      low = low || comparator
-      if (gtfn(comparator.semver, high.semver, options)) {
-        high = comparator
-      } else if (ltfn(comparator.semver, low.semver, options)) {
-        low = comparator
-      }
-    })
-
-    // If the edge version comparator has a operator then our version
-    // isn't outside it
-    if (high.operator === comp || high.operator === ecomp) {
-      return false
-    }
-
-    // If the lowest version comparator has an operator and our version
-    // is less than it then it isn't higher than the range
-    if ((!low.operator || low.operator === comp) &&
-        ltefn(version, low.semver)) {
-      return false
-    } else if (low.operator === ecomp && ltfn(version, low.semver)) {
-      return false
-    }
-  }
-  return true
-}
-
-exports.prerelease = prerelease
-function prerelease (version, options) {
-  var parsed = parse(version, options)
-  return (parsed && parsed.prerelease.length) ? parsed.prerelease : null
-}
-
-exports.intersects = intersects
-function intersects (r1, r2, options) {
-  r1 = new Range(r1, options)
-  r2 = new Range(r2, options)
-  return r1.intersects(r2)
-}
-
-exports.coerce = coerce
-function coerce (version, options) {
-  if (version instanceof SemVer) {
-    return version
-  }
-
-  if (typeof version === 'number') {
-    version = String(version)
-  }
-
-  if (typeof version !== 'string') {
-    return null
-  }
-
-  options = options || {}
-
-  var match = null
-  if (!options.rtl) {
-    match = version.match(safeRe[t.COERCE])
-  } else {
-    // Find the right-most coercible string that does not share
-    // a terminus with a more left-ward coercible string.
-    // Eg, '1.2.3.4' wants to coerce '2.3.4', not '3.4' or '4'
-    //
-    // Walk through the string checking with a /g regexp
-    // Manually set the index so as to pick up overlapping matches.
-    // Stop when we get a match that ends at the string end, since no
-    // coercible string can be more right-ward without the same terminus.
-    var next
-    while ((next = safeRe[t.COERCERTL].exec(version)) &&
-      (!match || match.index + match[0].length !== version.length)
-    ) {
-      if (!match ||
-          next.index + next[0].length !== match.index + match[0].length) {
-        match = next
-      }
-      safeRe[t.COERCERTL].lastIndex = next.index + next[1].length + next[2].length
-    }
-    // leave it in a clean state
-    safeRe[t.COERCERTL].lastIndex = -1
-  }
-
-  if (match === null) {
-    return null
-  }
-
-  return parse(match[2] +
-    '.' + (match[3] || '0') +
-    '.' + (match[4] || '0'), options)
 }
 
 
@@ -40791,6 +39023,9 @@ const EMPTY_BUF = Buffer.alloc(0)
 const FastBuffer = Buffer[Symbol.species]
 const addListener = util.addListener
 const removeAllListeners = util.removeAllListeners
+const kIdleSocketValidation = Symbol('kIdleSocketValidation')
+const kIdleSocketValidationTimeout = Symbol('kIdleSocketValidationTimeout')
+const kSocketUsed = Symbol('kSocketUsed')
 
 let extractBody
 
@@ -41105,6 +39340,11 @@ class Parser {
       return -1
     }
 
+    if (client[kRunning] === 0) {
+      util.destroy(socket, new SocketError('bad response', util.getSocketInfo(socket)))
+      return -1
+    }
+
     const request = client[kQueue][client[kRunningIdx]]
     if (!request) {
       return -1
@@ -41205,6 +39445,11 @@ class Parser {
 
     /* istanbul ignore next: difficult to make a test case for */
     if (socket.destroyed) {
+      return -1
+    }
+
+    if (client[kRunning] === 0) {
+      util.destroy(socket, new SocketError('bad response', util.getSocketInfo(socket)))
       return -1
     }
 
@@ -41381,6 +39626,7 @@ class Parser {
     request.onComplete(headers)
 
     client[kQueue][client[kRunningIdx]++] = null
+    socket[kSocketUsed] = true
 
     if (socket[kWriting]) {
       assert(client[kRunning] === 0)
@@ -41439,6 +39685,9 @@ async function connectH1 (client, socket) {
   socket[kWriting] = false
   socket[kReset] = false
   socket[kBlocking] = false
+  socket[kIdleSocketValidation] = 0
+  socket[kIdleSocketValidationTimeout] = null
+  socket[kSocketUsed] = false
   socket[kParser] = new Parser(client, socket, llhttpInstance)
 
   addListener(socket, 'error', function (err) {
@@ -41484,6 +39733,8 @@ async function connectH1 (client, socket) {
   addListener(socket, 'close', function () {
     const client = this[kClient]
     const parser = this[kParser]
+
+    clearIdleSocketValidation(this)
 
     if (parser) {
       if (!this[kError] && parser.statusCode && !parser.shouldKeepAlive) {
@@ -41550,7 +39801,7 @@ async function connectH1 (client, socket) {
       return socket.destroyed
     },
     busy (request) {
-      if (socket[kWriting] || socket[kReset] || socket[kBlocking]) {
+      if (socket[kWriting] || socket[kReset] || socket[kBlocking] || socket[kIdleSocketValidation] === 1) {
         return true
       }
 
@@ -41588,6 +39839,31 @@ async function connectH1 (client, socket) {
   }
 }
 
+function clearIdleSocketValidation (socket) {
+  if (socket[kIdleSocketValidationTimeout]) {
+    clearTimeout(socket[kIdleSocketValidationTimeout])
+    socket[kIdleSocketValidationTimeout] = null
+  }
+
+  socket[kIdleSocketValidation] = 0
+}
+
+function scheduleIdleSocketValidation (client, socket) {
+  socket[kIdleSocketValidation] = 1
+  socket[kIdleSocketValidationTimeout] = setTimeout(() => {
+    socket[kIdleSocketValidationTimeout] = null
+    socket[kIdleSocketValidation] = 2
+
+    if (client[kSocket] === socket && !socket.destroyed) {
+      client[kResume]()
+    }
+  }, 0)
+  socket[kIdleSocketValidationTimeout].unref?.()
+}
+
+/**
+ * @param {import('./client.js')} client
+ */
 function resumeH1 (client) {
   const socket = client[kSocket]
 
@@ -41600,6 +39876,32 @@ function resumeH1 (client) {
     } else if (socket[kNoRef] && socket.ref) {
       socket.ref()
       socket[kNoRef] = false
+    }
+
+    if (client[kRunning] === 0 && client[kPending] > 0 && socket[kSocketUsed]) {
+      if (socket[kIdleSocketValidation] === 0) {
+        scheduleIdleSocketValidation(client, socket)
+        socket[kParser].readMore()
+        if (socket.destroyed) {
+          return
+        }
+        return
+      }
+
+      if (socket[kIdleSocketValidation] === 1) {
+        socket[kParser].readMore()
+        if (socket.destroyed) {
+          return
+        }
+        return
+      }
+    }
+
+    if (client[kRunning] === 0) {
+      socket[kParser].readMore()
+      if (socket.destroyed) {
+        return
+      }
     }
 
     if (client[kSize] === 0) {
@@ -41695,6 +39997,7 @@ function writeH1 (client, request) {
   }
 
   const socket = client[kSocket]
+  clearIdleSocketValidation(socket)
 
   const abort = (err) => {
     if (request.aborted || request.completed) {
@@ -43567,6 +41870,7 @@ class DispatcherBase extends Dispatcher {
 
   get webSocketOptions () {
     return {
+      maxFragments: this[kWebSocketOptions].maxFragments ?? 131072,
       maxPayloadSize: this[kWebSocketOptions].maxPayloadSize ?? 128 * 1024 * 1024
     }
   }
@@ -49503,32 +47807,25 @@ function parseUnparsedAttributes (unparsedAttributes, cookieAttributeList = {}) 
     // If the attribute-name case-insensitively matches the string
     // "SameSite", the user agent MUST process the cookie-av as follows:
 
-    // 1. Let enforcement be "Default".
-    let enforcement = 'Default'
-
     const attributeValueLowercase = attributeValue.toLowerCase()
-    // 2. If cookie-av's attribute-value is a case-insensitive match for
-    //    "None", set enforcement to "None".
-    if (attributeValueLowercase.includes('none')) {
-      enforcement = 'None'
-    }
 
-    // 3. If cookie-av's attribute-value is a case-insensitive match for
-    //    "Strict", set enforcement to "Strict".
-    if (attributeValueLowercase.includes('strict')) {
-      enforcement = 'Strict'
+    // 1. If cookie-av's attribute-value is a case-insensitive match for
+    //    "None", append an attribute to the cookie-attribute-list with an
+    //    attribute-name of "SameSite" and an attribute-value of "None".
+    if (attributeValueLowercase === 'none') {
+      cookieAttributeList.sameSite = 'None'
+    } else if (attributeValueLowercase === 'strict') {
+      // 2. If cookie-av's attribute-value is a case-insensitive match for
+      //    "Strict", append an attribute to the cookie-attribute-list with
+      //    an attribute-name of "SameSite" and an attribute-value of
+      //    "Strict".
+      cookieAttributeList.sameSite = 'Strict'
+    } else if (attributeValueLowercase === 'lax') {
+      // 3. If cookie-av's attribute-value is a case-insensitive match for
+      //    "Lax", append an attribute to the cookie-attribute-list with an
+      //    attribute-name of "SameSite" and an attribute-value of "Lax".
+      cookieAttributeList.sameSite = 'Lax'
     }
-
-    // 4. If cookie-av's attribute-value is a case-insensitive match for
-    //    "Lax", set enforcement to "Lax".
-    if (attributeValueLowercase.includes('lax')) {
-      enforcement = 'Lax'
-    }
-
-    // 5. Append an attribute to the cookie-attribute-list with an
-    //    attribute-name of "SameSite" and an attribute-value of
-    //    enforcement.
-    cookieAttributeList.sameSite = enforcement
   } else {
     cookieAttributeList.unparsed ??= []
 
@@ -62354,6 +60651,11 @@ const { closeWebSocketConnection } = __nccwpck_require__(86897)
 const { PerMessageDeflate } = __nccwpck_require__(19469)
 const { MessageSizeExceededError } = __nccwpck_require__(68707)
 
+function failWebsocketConnectionWithCode (ws, code, reason) {
+  closeWebSocketConnection(ws, code, reason, Buffer.byteLength(reason))
+  failWebsocketConnection(ws, reason)
+}
+
 // This code was influenced by ws released under the MIT license.
 // Copyright (c) 2011 Einar Otto Stangvik <einaros@gmail.com>
 // Copyright (c) 2013 Arnout Kazemier and contributors
@@ -62374,18 +60676,22 @@ class ByteParser extends Writable {
   #extensions
 
   /** @type {number} */
+  #maxFragments
+
+  /** @type {number} */
   #maxPayloadSize
 
   /**
    * @param {import('./websocket').WebSocket} ws
    * @param {Map<string, string>|null} extensions
-   * @param {{ maxPayloadSize?: number }} [options]
+   * @param {{ maxFragments?: number, maxPayloadSize?: number }} [options]
    */
   constructor (ws, extensions, options = {}) {
     super()
 
     this.ws = ws
     this.#extensions = extensions == null ? new Map() : extensions
+    this.#maxFragments = options.maxFragments ?? 0
     this.#maxPayloadSize = options.maxPayloadSize ?? 0
 
     if (this.#extensions.has('permessage-deflate')) {
@@ -62409,9 +60715,9 @@ class ByteParser extends Writable {
     if (
       this.#maxPayloadSize > 0 &&
       !isControlFrame(this.#info.opcode) &&
-      this.#info.payloadLength > this.#maxPayloadSize
+      this.#info.payloadLength + this.#fragmentsBytes > this.#maxPayloadSize
     ) {
-      failWebsocketConnection(this.ws, 'Payload size exceeds maximum allowed size')
+      failWebsocketConnectionWithCode(this.ws, 1009, 'Payload size exceeds maximum allowed size')
       return false
     }
 
@@ -62576,10 +60882,12 @@ class ByteParser extends Writable {
           this.#state = parserStates.INFO
         } else {
           if (!this.#info.compressed) {
-            this.writeFragments(body)
+            if (!this.writeFragments(body)) {
+              return
+            }
 
             if (this.#maxPayloadSize > 0 && this.#fragmentsBytes > this.#maxPayloadSize) {
-              failWebsocketConnection(this.ws, new MessageSizeExceededError().message)
+              failWebsocketConnectionWithCode(this.ws, 1009, new MessageSizeExceededError().message)
               return
             }
 
@@ -62598,14 +60906,17 @@ class ByteParser extends Writable {
               this.#info.fin,
               (error, data) => {
                 if (error) {
-                  failWebsocketConnection(this.ws, error.message)
+                  const code = error instanceof MessageSizeExceededError ? 1009 : 1007
+                  failWebsocketConnectionWithCode(this.ws, code, error.message)
                   return
                 }
 
-                this.writeFragments(data)
+                if (!this.writeFragments(data)) {
+                  return
+                }
 
                 if (this.#maxPayloadSize > 0 && this.#fragmentsBytes > this.#maxPayloadSize) {
-                  failWebsocketConnection(this.ws, new MessageSizeExceededError().message)
+                  failWebsocketConnectionWithCode(this.ws, 1009, new MessageSizeExceededError().message)
                   return
                 }
 
@@ -62675,8 +60986,17 @@ class ByteParser extends Writable {
   }
 
   writeFragments (fragment) {
+    if (
+      this.#maxFragments > 0 &&
+      this.#fragments.length === this.#maxFragments
+    ) {
+      failWebsocketConnectionWithCode(this.ws, 1008, 'Too many message fragments')
+      return false
+    }
+
     this.#fragmentsBytes += fragment.length
     this.#fragments.push(fragment)
+    return true
   }
 
   consumeFragments () {
@@ -63729,9 +62049,12 @@ class WebSocket extends EventTarget {
     // once this happens, the connection is open
     this[kResponse] = response
 
-    const maxPayloadSize = this[kController]?.dispatcher?.webSocketOptions?.maxPayloadSize
+    const webSocketOptions = this[kController]?.dispatcher?.webSocketOptions
+    const maxFragments = webSocketOptions?.maxFragments
+    const maxPayloadSize = webSocketOptions?.maxPayloadSize
 
     const parser = new ByteParser(this, parsedExtensions, {
+      maxFragments,
       maxPayloadSize
     })
     parser.on('drain', onParserDrain)
@@ -63909,24 +62232,28 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.saveCache = exports.restoreCache = exports.isFeatureAvailable = exports.ReserveCacheError = exports.ValidationError = void 0;
+exports.ReserveCacheError = exports.ValidationError = void 0;
+exports.isFeatureAvailable = isFeatureAvailable;
+exports.restoreCache = restoreCache;
+exports.saveCache = saveCache;
 const core = __importStar(__nccwpck_require__(37484));
 const path = __importStar(__nccwpck_require__(16928));
 const utils = __importStar(__nccwpck_require__(16712));
@@ -63970,7 +62297,6 @@ function checkKey(key) {
 function isFeatureAvailable() {
     return !!process.env['ACTIONS_CACHE_URL'];
 }
-exports.isFeatureAvailable = isFeatureAvailable;
 /**
  * Restores cache from keys
  *
@@ -63983,71 +62309,68 @@ exports.isFeatureAvailable = isFeatureAvailable;
  * @param s3BucketName a name of AWS S3 bucket
  * @returns string returns the key for the cache hit, otherwise returns undefined
  */
-function restoreCache(paths, primaryKey, restoreKeys, options, enableCrossOsArchive = false, s3Options, s3BucketName) {
-    return __awaiter(this, void 0, void 0, function* () {
-        checkPaths(paths);
-        restoreKeys = restoreKeys || [];
-        const keys = [primaryKey, ...restoreKeys];
-        core.debug('Resolved Keys:');
-        core.debug(JSON.stringify(keys));
-        if (keys.length > 10) {
-            throw new ValidationError(`Key Validation Error: Keys are limited to a maximum of 10.`);
+async function restoreCache(paths, primaryKey, restoreKeys, options, enableCrossOsArchive = false, s3Options, s3BucketName) {
+    checkPaths(paths);
+    restoreKeys = restoreKeys || [];
+    const keys = [primaryKey, ...restoreKeys];
+    core.debug('Resolved Keys:');
+    core.debug(JSON.stringify(keys));
+    if (keys.length > 10) {
+        throw new ValidationError(`Key Validation Error: Keys are limited to a maximum of 10.`);
+    }
+    for (const key of keys) {
+        checkKey(key);
+    }
+    const compressionMethod = await utils.getCompressionMethod();
+    let archivePath = '';
+    try {
+        // path are needed to compute version
+        const cacheEntry = await cacheHttpClient.getCacheEntry(keys, paths, {
+            compressionMethod,
+            enableCrossOsArchive
+        }, s3Options, s3BucketName);
+        if (!cacheEntry?.archiveLocation) {
+            // Cache not found
+            return undefined;
         }
-        for (const key of keys) {
-            checkKey(key);
-        }
-        const compressionMethod = yield utils.getCompressionMethod();
-        let archivePath = '';
-        try {
-            // path are needed to compute version
-            const cacheEntry = yield cacheHttpClient.getCacheEntry(keys, paths, {
-                compressionMethod,
-                enableCrossOsArchive
-            }, s3Options, s3BucketName);
-            if (!(cacheEntry === null || cacheEntry === void 0 ? void 0 : cacheEntry.archiveLocation)) {
-                // Cache not found
-                return undefined;
-            }
-            if (options === null || options === void 0 ? void 0 : options.lookupOnly) {
-                core.info('Lookup only - skipping download');
-                return cacheEntry.cacheKey;
-            }
-            archivePath = path.join(yield utils.createTempDirectory(), utils.getCacheFileName(compressionMethod));
-            core.debug(`Archive Path: ${archivePath}`);
-            // Download the cache from the cache entry
-            yield cacheHttpClient.downloadCache(cacheEntry, archivePath, options, s3Options, s3BucketName);
-            if (core.isDebug()) {
-                yield (0, tar_1.listTar)(archivePath, compressionMethod);
-            }
-            const archiveFileSize = utils.getArchiveFileSizeInBytes(archivePath);
-            core.info(`Cache Size: ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B)`);
-            yield (0, tar_1.extractTar)(archivePath, compressionMethod);
-            core.info('Cache restored successfully');
+        if (options?.lookupOnly) {
+            core.info('Lookup only - skipping download');
             return cacheEntry.cacheKey;
         }
+        archivePath = path.join(await utils.createTempDirectory(), utils.getCacheFileName(compressionMethod));
+        core.debug(`Archive Path: ${archivePath}`);
+        // Download the cache from the cache entry
+        await cacheHttpClient.downloadCache(cacheEntry, archivePath, options, s3Options, s3BucketName);
+        if (core.isDebug()) {
+            await (0, tar_1.listTar)(archivePath, compressionMethod);
+        }
+        const archiveFileSize = utils.getArchiveFileSizeInBytes(archivePath);
+        core.info(`Cache Size: ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B)`);
+        await (0, tar_1.extractTar)(archivePath, compressionMethod);
+        core.info('Cache restored successfully');
+        return cacheEntry.cacheKey;
+    }
+    catch (error) {
+        const typedError = error;
+        if (typedError.name === ValidationError.name) {
+            throw error;
+        }
+        else {
+            // Supress all non-validation cache related errors because caching should be optional
+            core.warning(`Failed to restore: ${error.message}`);
+        }
+    }
+    finally {
+        // Try to delete the archive to save space
+        try {
+            await utils.unlinkFile(archivePath);
+        }
         catch (error) {
-            const typedError = error;
-            if (typedError.name === ValidationError.name) {
-                throw error;
-            }
-            else {
-                // Supress all non-validation cache related errors because caching should be optional
-                core.warning(`Failed to restore: ${error.message}`);
-            }
+            core.debug(`Failed to delete archive: ${error}`);
         }
-        finally {
-            // Try to delete the archive to save space
-            try {
-                yield utils.unlinkFile(archivePath);
-            }
-            catch (error) {
-                core.debug(`Failed to delete archive: ${error}`);
-            }
-        }
-        return undefined;
-    });
+    }
+    return undefined;
 }
-exports.restoreCache = restoreCache;
 /**
  * Saves a list of files with the specified key
  *
@@ -64059,79 +62382,76 @@ exports.restoreCache = restoreCache;
  * @param s3BucketName a name of AWS S3 bucket
  * @returns number returns cacheId if the cache was saved successfully and throws an error if save fails
  */
-function saveCache(paths, key, options, enableCrossOsArchive = false, s3Options, s3BucketName) {
-    var _a, _b, _c, _d, _e;
-    return __awaiter(this, void 0, void 0, function* () {
-        checkPaths(paths);
-        checkKey(key);
-        const compressionMethod = yield utils.getCompressionMethod();
-        let cacheId = -1;
-        const cachePaths = yield utils.resolvePaths(paths);
-        core.debug('Cache Paths:');
-        core.debug(`${JSON.stringify(cachePaths)}`);
-        if (cachePaths.length === 0) {
-            throw new Error(`Path Validation Error: Path(s) specified in the action for caching do(es) not exist, hence no cache is being saved.`);
+async function saveCache(paths, key, options, enableCrossOsArchive = false, s3Options, s3BucketName) {
+    checkPaths(paths);
+    checkKey(key);
+    const compressionMethod = await utils.getCompressionMethod();
+    let cacheId = -1;
+    const cachePaths = await utils.resolvePaths(paths);
+    core.debug('Cache Paths:');
+    core.debug(`${JSON.stringify(cachePaths)}`);
+    if (cachePaths.length === 0) {
+        throw new Error(`Path Validation Error: Path(s) specified in the action for caching do(es) not exist, hence no cache is being saved.`);
+    }
+    const archiveFolder = await utils.createTempDirectory();
+    const archivePath = path.join(archiveFolder, utils.getCacheFileName(compressionMethod));
+    core.debug(`Archive Path: ${archivePath}`);
+    try {
+        await (0, tar_1.createTar)(archiveFolder, cachePaths, compressionMethod);
+        if (core.isDebug()) {
+            await (0, tar_1.listTar)(archivePath, compressionMethod);
         }
-        const archiveFolder = yield utils.createTempDirectory();
-        const archivePath = path.join(archiveFolder, utils.getCacheFileName(compressionMethod));
-        core.debug(`Archive Path: ${archivePath}`);
-        try {
-            yield (0, tar_1.createTar)(archiveFolder, cachePaths, compressionMethod);
-            if (core.isDebug()) {
-                yield (0, tar_1.listTar)(archivePath, compressionMethod);
-            }
-            const fileSizeLimit = 10 * 1024 * 1024 * 1024; // 10GB per repo limit
-            const archiveFileSize = utils.getArchiveFileSizeInBytes(archivePath);
-            core.debug(`File Size: ${archiveFileSize}`);
-            // For GHES, this check will take place in ReserveCache API with enterprise file size limit
-            if (archiveFileSize > fileSizeLimit && !utils.isGhes()) {
-                throw new Error(`Cache size of ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B) is over the 10GB limit, not saving cache.`);
-            }
-            if (!(s3Options && s3BucketName)) {
-                core.debug('Reserving Cache');
-                const reserveCacheResponse = yield cacheHttpClient.reserveCache(key, paths, {
-                    compressionMethod,
-                    enableCrossOsArchive,
-                    cacheSize: archiveFileSize
-                }, s3Options, s3BucketName);
-                if ((_a = reserveCacheResponse === null || reserveCacheResponse === void 0 ? void 0 : reserveCacheResponse.result) === null || _a === void 0 ? void 0 : _a.cacheId) {
-                    cacheId = (_b = reserveCacheResponse === null || reserveCacheResponse === void 0 ? void 0 : reserveCacheResponse.result) === null || _b === void 0 ? void 0 : _b.cacheId;
-                }
-                else if ((reserveCacheResponse === null || reserveCacheResponse === void 0 ? void 0 : reserveCacheResponse.statusCode) === 400) {
-                    throw new Error((_d = (_c = reserveCacheResponse === null || reserveCacheResponse === void 0 ? void 0 : reserveCacheResponse.error) === null || _c === void 0 ? void 0 : _c.message) !== null && _d !== void 0 ? _d : `Cache size of ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B) is over the data cap limit, not saving cache.`);
-                }
-                else {
-                    throw new ReserveCacheError(`Unable to reserve cache with key ${key}, another job may be creating this cache. More details: ${(_e = reserveCacheResponse === null || reserveCacheResponse === void 0 ? void 0 : reserveCacheResponse.error) === null || _e === void 0 ? void 0 : _e.message}`);
-                }
-            }
-            core.debug(`Saving Cache (ID: ${cacheId})`);
-            yield cacheHttpClient.saveCache(cacheId, archivePath, key, options, s3Options, s3BucketName);
+        const fileSizeLimit = 10 * 1024 * 1024 * 1024; // 10GB per repo limit
+        const archiveFileSize = utils.getArchiveFileSizeInBytes(archivePath);
+        core.debug(`File Size: ${archiveFileSize}`);
+        // For GHES, this check will take place in ReserveCache API with enterprise file size limit
+        if (archiveFileSize > fileSizeLimit && !utils.isGhes()) {
+            throw new Error(`Cache size of ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B) is over the 10GB limit, not saving cache.`);
         }
-        catch (error) {
-            const typedError = error;
-            if (typedError.name === ValidationError.name) {
-                throw error;
+        if (!(s3Options && s3BucketName)) {
+            core.debug('Reserving Cache');
+            const reserveCacheResponse = await cacheHttpClient.reserveCache(key, paths, {
+                compressionMethod,
+                enableCrossOsArchive,
+                cacheSize: archiveFileSize
+            }, s3Options, s3BucketName);
+            if (reserveCacheResponse?.result?.cacheId) {
+                cacheId = reserveCacheResponse?.result?.cacheId;
             }
-            else if (typedError.name === ReserveCacheError.name) {
-                core.info(`Failed to save: ${typedError.message}`);
+            else if (reserveCacheResponse?.statusCode === 400) {
+                throw new Error(reserveCacheResponse?.error?.message ??
+                    `Cache size of ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B) is over the data cap limit, not saving cache.`);
             }
             else {
-                core.warning(`Failed to save: ${typedError.message}`);
+                throw new ReserveCacheError(`Unable to reserve cache with key ${key}, another job may be creating this cache. More details: ${reserveCacheResponse?.error?.message}`);
             }
         }
-        finally {
-            // Try to delete the archive to save space
-            try {
-                yield utils.unlinkFile(archivePath);
-            }
-            catch (error) {
-                core.debug(`Failed to delete archive: ${error}`);
-            }
+        core.debug(`Saving Cache (ID: ${cacheId})`);
+        await cacheHttpClient.saveCache(cacheId, archivePath, key, options, s3Options, s3BucketName);
+    }
+    catch (error) {
+        const typedError = error;
+        if (typedError.name === ValidationError.name) {
+            throw error;
         }
-        return cacheId;
-    });
+        else if (typedError.name === ReserveCacheError.name) {
+            core.info(`Failed to save: ${typedError.message}`);
+        }
+        else {
+            core.warning(`Failed to save: ${typedError.message}`);
+        }
+    }
+    finally {
+        // Try to delete the archive to save space
+        try {
+            await utils.unlinkFile(archivePath);
+        }
+        catch (error) {
+            core.debug(`Failed to delete archive: ${error}`);
+        }
+    }
+    return cacheId;
 }
-exports.saveCache = saveCache;
 //# sourceMappingURL=cache.js.map
 
 /***/ }),
@@ -64157,24 +62477,29 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.saveCache = exports.reserveCache = exports.downloadCache = exports.getCacheEntry = exports.getCacheVersion = void 0;
+exports.getCacheVersion = getCacheVersion;
+exports.getCacheEntry = getCacheEntry;
+exports.downloadCache = downloadCache;
+exports.reserveCache = reserveCache;
+exports.saveCache = saveCache;
 const core = __importStar(__nccwpck_require__(37484));
 const http_client_1 = __nccwpck_require__(54844);
 const auth_1 = __nccwpck_require__(44552);
@@ -64228,69 +62553,66 @@ function getCacheVersion(paths, compressionMethod, enableCrossOsArchive = false)
     components.push(versionSalt);
     return crypto.createHash('sha256').update(components.join('|')).digest('hex');
 }
-exports.getCacheVersion = getCacheVersion;
-function getCacheEntryS3(s3Options, s3BucketName, keys, paths) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const primaryKey = keys[0];
-        const s3client = new client_s3_1.S3Client(s3Options);
-        let contents = new Array();
-        let s3ContinuationToken = undefined;
-        let count = 0;
-        const param = {
-            Bucket: s3BucketName
-        };
-        for (;;) {
-            core.debug(`ListObjects Count: ${count}`);
-            if (s3ContinuationToken != undefined) {
-                param.ContinuationToken = s3ContinuationToken;
-            }
-            let response;
-            try {
-                response = yield s3client.send(new client_s3_1.ListObjectsV2Command(param));
-            }
-            catch (e) {
-                throw new Error(`Error from S3: ${e}`);
-            }
-            if (!response.Contents) {
-                if (contents.length != 0) {
-                    break;
-                }
-                throw new Error(`Cannot found object in bucket ${s3BucketName}`);
-            }
-            core.debug(`Found objects ${response.Contents.length}`);
-            const found = response.Contents.find((content) => content.Key === primaryKey);
-            if (found && found.LastModified) {
-                return {
-                    cacheKey: primaryKey,
-                    creationTime: found.LastModified.toString(),
-                    archiveLocation: "https://s3.amazonaws.com/" // dummy
-                };
-            }
-            response.Contents.map((obj) => contents.push({
-                Key: obj.Key,
-                LastModified: obj.LastModified
-            }));
-            core.debug(`Total objects ${contents.length}`);
-            if (response.IsTruncated) {
-                s3ContinuationToken = response.NextContinuationToken;
-            }
-            else {
+async function getCacheEntryS3(s3Options, s3BucketName, keys, paths) {
+    const primaryKey = keys[0];
+    const s3client = new client_s3_1.S3Client(s3Options);
+    const contents = [];
+    let s3ContinuationToken = undefined;
+    let count = 0;
+    const param = {
+        Bucket: s3BucketName
+    };
+    for (;;) {
+        core.debug(`ListObjects Count: ${count}`);
+        if (s3ContinuationToken !== undefined) {
+            param.ContinuationToken = s3ContinuationToken;
+        }
+        let response;
+        try {
+            response = await s3client.send(new client_s3_1.ListObjectsV2Command(param));
+        }
+        catch (e) {
+            throw new Error(`Error from S3: ${e}`);
+        }
+        if (!response.Contents) {
+            if (contents.length !== 0) {
                 break;
             }
-            count++;
+            throw new Error(`Cannot found object in bucket ${s3BucketName}`);
         }
-        core.debug('Not found in primary key, will fallback to restore keys');
-        const notPrimaryKey = keys.slice(1);
-        const found = searchRestoreKeyEntry(notPrimaryKey, contents);
-        if (found != null && found.LastModified) {
+        core.debug(`Found objects ${response.Contents.length}`);
+        const found = response.Contents.find((content) => content.Key === primaryKey);
+        if (found && found.LastModified) {
             return {
-                cacheKey: found.Key,
+                cacheKey: primaryKey,
                 creationTime: found.LastModified.toString(),
-                archiveLocation: "https://s3.amazonaws.com/" // dummy
+                archiveLocation: 'https://s3.amazonaws.com/' // dummy
             };
         }
-        return null;
-    });
+        response.Contents.map((obj) => contents.push({
+            Key: obj.Key,
+            LastModified: obj.LastModified
+        }));
+        core.debug(`Total objects ${contents.length}`);
+        if (response.IsTruncated) {
+            s3ContinuationToken = response.NextContinuationToken;
+        }
+        else {
+            break;
+        }
+        count++;
+    }
+    core.debug('Not found in primary key, will fallback to restore keys');
+    const notPrimaryKey = keys.slice(1);
+    const found = searchRestoreKeyEntry(notPrimaryKey, contents);
+    if (found != null && found.LastModified) {
+        return {
+            cacheKey: found.Key,
+            creationTime: found.LastModified.toString(),
+            archiveLocation: 'https://s3.amazonaws.com/' // dummy
+        };
+    }
+    return null;
 }
 function searchRestoreKeyEntry(notPrimaryKey, entries) {
     for (const k of notPrimaryKey) {
@@ -64302,14 +62624,13 @@ function searchRestoreKeyEntry(notPrimaryKey, entries) {
     return null;
 }
 function _searchRestoreKeyEntry(notPrimaryKey, entries) {
-    var _a;
-    let matchPrefix = new Array();
+    const matchPrefix = [];
     for (const entry of entries) {
         if (entry.Key === notPrimaryKey) {
             // extractly match, Use this entry
             return entry;
         }
-        if ((_a = entry.Key) === null || _a === void 0 ? void 0 : _a.startsWith(notPrimaryKey)) {
+        if (entry.Key?.startsWith(notPrimaryKey)) {
             matchPrefix.push(entry);
         }
     }
@@ -64318,17 +62639,16 @@ function _searchRestoreKeyEntry(notPrimaryKey, entries) {
         return null;
     }
     matchPrefix.sort(function (i, j) {
-        var _a, _b, _c, _d, _e, _f;
-        if (i.LastModified == undefined || j.LastModified == undefined) {
+        if (i.LastModified === undefined || j.LastModified === undefined) {
             return 0;
         }
-        if (((_a = i.LastModified) === null || _a === void 0 ? void 0 : _a.getTime()) === ((_b = j.LastModified) === null || _b === void 0 ? void 0 : _b.getTime())) {
+        if (i.LastModified?.getTime() === j.LastModified?.getTime()) {
             return 0;
         }
-        if (((_c = i.LastModified) === null || _c === void 0 ? void 0 : _c.getTime()) > ((_d = j.LastModified) === null || _d === void 0 ? void 0 : _d.getTime())) {
+        if (i.LastModified?.getTime() > j.LastModified?.getTime()) {
             return -1;
         }
-        if (((_e = i.LastModified) === null || _e === void 0 ? void 0 : _e.getTime()) < ((_f = j.LastModified) === null || _f === void 0 ? void 0 : _f.getTime())) {
+        if (i.LastModified?.getTime() < j.LastModified?.getTime()) {
             return 1;
         }
         return 0;
@@ -64336,108 +62656,94 @@ function _searchRestoreKeyEntry(notPrimaryKey, entries) {
     // return newest entry
     return matchPrefix[0];
 }
-function getCacheEntry(keys, paths, options, s3Options, s3BucketName) {
-    return __awaiter(this, void 0, void 0, function* () {
-        if (s3Options && s3BucketName) {
-            return yield getCacheEntryS3(s3Options, s3BucketName, keys, paths);
+async function getCacheEntry(keys, paths, options, s3Options, s3BucketName) {
+    if (s3Options && s3BucketName) {
+        return await getCacheEntryS3(s3Options, s3BucketName, keys, paths);
+    }
+    const httpClient = createHttpClient();
+    const version = getCacheVersion(paths, options?.compressionMethod, options?.enableCrossOsArchive);
+    const resource = `cache?keys=${encodeURIComponent(keys.join(','))}&version=${version}`;
+    const response = await (0, requestUtils_1.retryTypedResponse)('getCacheEntry', async () => httpClient.getJson(getCacheApiUrl(resource)));
+    // Cache not found
+    if (response.statusCode === 204) {
+        // List cache for primary key only if cache miss occurs
+        if (core.isDebug()) {
+            await printCachesListForDiagnostics(keys[0], httpClient, version);
         }
-        const httpClient = createHttpClient();
-        const version = getCacheVersion(paths, options === null || options === void 0 ? void 0 : options.compressionMethod, options === null || options === void 0 ? void 0 : options.enableCrossOsArchive);
-        const resource = `cache?keys=${encodeURIComponent(keys.join(','))}&version=${version}`;
-        const response = yield (0, requestUtils_1.retryTypedResponse)('getCacheEntry', () => __awaiter(this, void 0, void 0, function* () { return httpClient.getJson(getCacheApiUrl(resource)); }));
-        // Cache not found
-        if (response.statusCode === 204) {
-            // List cache for primary key only if cache miss occurs
-            if (core.isDebug()) {
-                yield printCachesListForDiagnostics(keys[0], httpClient, version);
-            }
-            return null;
-        }
-        if (!(0, requestUtils_1.isSuccessStatusCode)(response.statusCode)) {
-            throw new Error(`Cache service responded with ${response.statusCode}`);
-        }
-        const cacheResult = response.result;
-        const cacheDownloadUrl = cacheResult === null || cacheResult === void 0 ? void 0 : cacheResult.archiveLocation;
-        if (!cacheDownloadUrl) {
-            // Cache achiveLocation not found. This should never happen, and hence bail out.
-            throw new Error('Cache not found.');
-        }
-        core.setSecret(cacheDownloadUrl);
-        core.debug(`Cache Result:`);
-        core.debug(JSON.stringify(cacheResult));
-        return cacheResult;
-    });
+        return null;
+    }
+    if (!(0, requestUtils_1.isSuccessStatusCode)(response.statusCode)) {
+        throw new Error(`Cache service responded with ${response.statusCode}`);
+    }
+    const cacheResult = response.result;
+    const cacheDownloadUrl = cacheResult?.archiveLocation;
+    if (!cacheDownloadUrl) {
+        // Cache achiveLocation not found. This should never happen, and hence bail out.
+        throw new Error('Cache not found.');
+    }
+    core.setSecret(cacheDownloadUrl);
+    core.debug(`Cache Result:`);
+    core.debug(JSON.stringify(cacheResult));
+    return cacheResult;
 }
-exports.getCacheEntry = getCacheEntry;
-function printCachesListForDiagnostics(key, httpClient, version) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const resource = `caches?key=${encodeURIComponent(key)}`;
-        const response = yield (0, requestUtils_1.retryTypedResponse)('listCache', () => __awaiter(this, void 0, void 0, function* () { return httpClient.getJson(getCacheApiUrl(resource)); }));
-        if (response.statusCode === 200) {
-            const cacheListResult = response.result;
-            const totalCount = cacheListResult === null || cacheListResult === void 0 ? void 0 : cacheListResult.totalCount;
-            if (totalCount && totalCount > 0) {
-                core.debug(`No matching cache found for cache key '${key}', version '${version} and scope ${process.env['GITHUB_REF']}. There exist one or more cache(s) with similar key but they have different version or scope. See more info on cache matching here: https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows#matching-a-cache-key \nOther caches with similar key:`);
-                for (const cacheEntry of (cacheListResult === null || cacheListResult === void 0 ? void 0 : cacheListResult.artifactCaches) || []) {
-                    core.debug(`Cache Key: ${cacheEntry === null || cacheEntry === void 0 ? void 0 : cacheEntry.cacheKey}, Cache Version: ${cacheEntry === null || cacheEntry === void 0 ? void 0 : cacheEntry.cacheVersion}, Cache Scope: ${cacheEntry === null || cacheEntry === void 0 ? void 0 : cacheEntry.scope}, Cache Created: ${cacheEntry === null || cacheEntry === void 0 ? void 0 : cacheEntry.creationTime}`);
-                }
+async function printCachesListForDiagnostics(key, httpClient, version) {
+    const resource = `caches?key=${encodeURIComponent(key)}`;
+    const response = await (0, requestUtils_1.retryTypedResponse)('listCache', async () => httpClient.getJson(getCacheApiUrl(resource)));
+    if (response.statusCode === 200) {
+        const cacheListResult = response.result;
+        const totalCount = cacheListResult?.totalCount;
+        if (totalCount && totalCount > 0) {
+            core.debug(`No matching cache found for cache key '${key}', version '${version} and scope ${process.env['GITHUB_REF']}. There exist one or more cache(s) with similar key but they have different version or scope. See more info on cache matching here: https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows#matching-a-cache-key \nOther caches with similar key:`);
+            for (const cacheEntry of cacheListResult?.artifactCaches || []) {
+                core.debug(`Cache Key: ${cacheEntry?.cacheKey}, Cache Version: ${cacheEntry?.cacheVersion}, Cache Scope: ${cacheEntry?.scope}, Cache Created: ${cacheEntry?.creationTime}`);
             }
         }
-    });
+    }
 }
-function downloadCache(cacheEntry, archivePath, options, s3Options, s3BucketName) {
-    var _a;
-    return __awaiter(this, void 0, void 0, function* () {
-        const archiveLocation = (_a = cacheEntry.archiveLocation) !== null && _a !== void 0 ? _a : 'https://example.com'; // for dummy
-        const archiveUrl = new url_1.URL(archiveLocation);
-        const downloadOptions = (0, options_1.getDownloadOptions)(options);
-        if (archiveUrl.hostname.endsWith('.blob.core.windows.net')) {
-            if (downloadOptions.useAzureSdk) {
-                // Use Azure storage SDK to download caches hosted on Azure to improve speed and reliability.
-                yield (0, downloadUtils_1.downloadCacheStorageSDK)(archiveLocation, archivePath, downloadOptions);
-            }
-            else if (downloadOptions.concurrentBlobDownloads) {
-                // Use concurrent implementation with HttpClient to work around blob SDK issue
-                yield (0, downloadUtils_1.downloadCacheHttpClientConcurrent)(archiveLocation, archivePath, downloadOptions);
-            }
-            else {
-                // Otherwise, download using the Actions http-client.
-                yield (0, downloadUtils_1.downloadCacheHttpClient)(archiveLocation, archivePath);
-            }
+async function downloadCache(cacheEntry, archivePath, options, s3Options, s3BucketName) {
+    const archiveLocation = cacheEntry.archiveLocation ?? 'https://example.com'; // for dummy
+    const archiveUrl = new url_1.URL(archiveLocation);
+    const downloadOptions = (0, options_1.getDownloadOptions)(options);
+    if (archiveUrl.hostname.endsWith('.blob.core.windows.net')) {
+        if (downloadOptions.useAzureSdk) {
+            // Use Azure storage SDK to download caches hosted on Azure to improve speed and reliability.
+            await (0, downloadUtils_1.downloadCacheStorageSDK)(archiveLocation, archivePath, downloadOptions);
         }
-        else if (s3Options && s3BucketName && cacheEntry.cacheKey) {
-            yield (0, downloadUtils_1.downloadCacheStorageS3)(cacheEntry.cacheKey, archivePath, s3Options, s3BucketName);
+        else if (downloadOptions.concurrentBlobDownloads) {
+            // Use concurrent implementation with HttpClient to work around blob SDK issue
+            await (0, downloadUtils_1.downloadCacheHttpClientConcurrent)(archiveLocation, archivePath, downloadOptions);
         }
         else {
-            yield (0, downloadUtils_1.downloadCacheHttpClient)(archiveLocation, archivePath);
+            // Otherwise, download using the Actions http-client.
+            await (0, downloadUtils_1.downloadCacheHttpClient)(archiveLocation, archivePath);
         }
-    });
+    }
+    else if (s3Options && s3BucketName && cacheEntry.cacheKey) {
+        await (0, downloadUtils_1.downloadCacheStorageS3)(cacheEntry.cacheKey, archivePath, s3Options, s3BucketName);
+    }
+    else {
+        await (0, downloadUtils_1.downloadCacheHttpClient)(archiveLocation, archivePath);
+    }
 }
-exports.downloadCache = downloadCache;
 // Reserve Cache
-function reserveCache(key, paths, options, s3Options, s3BucketName) {
-    return __awaiter(this, void 0, void 0, function* () {
-        if (s3Options && s3BucketName) {
-            return {
-                statusCode: 200,
-                result: null,
-                headers: {}
-            };
-        }
-        const httpClient = createHttpClient();
-        const version = getCacheVersion(paths, options === null || options === void 0 ? void 0 : options.compressionMethod, options === null || options === void 0 ? void 0 : options.enableCrossOsArchive);
-        const reserveCacheRequest = {
-            key,
-            version,
-            cacheSize: options === null || options === void 0 ? void 0 : options.cacheSize
+async function reserveCache(key, paths, options, s3Options, s3BucketName) {
+    if (s3Options && s3BucketName) {
+        return {
+            statusCode: 200,
+            result: null,
+            headers: {}
         };
-        const response = yield (0, requestUtils_1.retryTypedResponse)('reserveCache', () => __awaiter(this, void 0, void 0, function* () {
-            return httpClient.postJson(getCacheApiUrl('caches'), reserveCacheRequest);
-        }));
-        return response;
-    });
+    }
+    const httpClient = createHttpClient();
+    const version = getCacheVersion(paths, options?.compressionMethod, options?.enableCrossOsArchive);
+    const reserveCacheRequest = {
+        key,
+        version,
+        cacheSize: options?.cacheSize
+    };
+    const response = await (0, requestUtils_1.retryTypedResponse)('reserveCache', async () => httpClient.postJson(getCacheApiUrl('caches'), reserveCacheRequest));
+    return response;
 }
-exports.reserveCache = reserveCache;
 function getContentRange(start, end) {
     // Format: `bytes start-end/filesize
     // start and end are inclusive
@@ -64446,117 +62752,102 @@ function getContentRange(start, end) {
     // Content-Range: bytes 0-199/*
     return `bytes ${start}-${end}/*`;
 }
-function uploadChunk(httpClient, resourceUrl, openStream, start, end) {
-    return __awaiter(this, void 0, void 0, function* () {
-        core.debug(`Uploading chunk of size ${end - start + 1} bytes at offset ${start} with content range: ${getContentRange(start, end)}`);
-        const additionalHeaders = {
-            'Content-Type': 'application/octet-stream',
-            'Content-Range': getContentRange(start, end)
-        };
-        const uploadChunkResponse = yield (0, requestUtils_1.retryHttpClientResponse)(`uploadChunk (start: ${start}, end: ${end})`, () => __awaiter(this, void 0, void 0, function* () {
-            return httpClient.sendStream('PATCH', resourceUrl, openStream(), additionalHeaders);
-        }));
-        if (!(0, requestUtils_1.isSuccessStatusCode)(uploadChunkResponse.message.statusCode)) {
-            throw new Error(`Cache service responded with ${uploadChunkResponse.message.statusCode} during upload chunk.`);
-        }
-    });
+async function uploadChunk(httpClient, resourceUrl, openStream, start, end) {
+    core.debug(`Uploading chunk of size ${end - start + 1} bytes at offset ${start} with content range: ${getContentRange(start, end)}`);
+    const additionalHeaders = {
+        'Content-Type': 'application/octet-stream',
+        'Content-Range': getContentRange(start, end)
+    };
+    const uploadChunkResponse = await (0, requestUtils_1.retryHttpClientResponse)(`uploadChunk (start: ${start}, end: ${end})`, async () => httpClient.sendStream('PATCH', resourceUrl, openStream(), additionalHeaders));
+    if (!(0, requestUtils_1.isSuccessStatusCode)(uploadChunkResponse.message.statusCode)) {
+        throw new Error(`Cache service responded with ${uploadChunkResponse.message.statusCode} during upload chunk.`);
+    }
 }
-function uploadFileS3(s3options, s3BucketName, archivePath, key, concurrency, maxChunkSize) {
-    return __awaiter(this, void 0, void 0, function* () {
-        core.debug(`Start upload to S3 (bucket: ${s3BucketName})`);
-        const fileStream = fs.createReadStream(archivePath);
-        try {
-            const parallelUpload = new lib_storage_1.Upload({
-                client: new client_s3_1.S3Client(s3options),
-                queueSize: concurrency,
-                partSize: maxChunkSize,
-                params: {
-                    Bucket: s3BucketName,
-                    Key: key,
-                    Body: fileStream
-                }
-            });
-            parallelUpload.on('httpUploadProgress', (progress) => {
-                core.debug(`Uploading chunk progress: ${JSON.stringify(progress)}`);
-            });
-            yield parallelUpload.done();
-        }
-        catch (error) {
-            throw new Error(`Cache upload failed because ${error}`);
-        }
-        return;
-    });
-}
-function uploadFile(httpClient, cacheId, archivePath, key, options, s3options, s3BucketName) {
-    return __awaiter(this, void 0, void 0, function* () {
-        // Upload Chunks
-        const uploadOptions = (0, options_1.getUploadOptions)(options);
-        const concurrency = utils.assertDefined('uploadConcurrency', uploadOptions.uploadConcurrency);
-        const maxChunkSize = utils.assertDefined('uploadChunkSize', uploadOptions.uploadChunkSize);
-        const parallelUploads = [...new Array(concurrency).keys()];
-        core.debug('Awaiting all uploads');
-        let offset = 0;
-        if (s3options && s3BucketName) {
-            yield uploadFileS3(s3options, s3BucketName, archivePath, key, concurrency, maxChunkSize);
-            return;
-        }
-        const fileSize = utils.getArchiveFileSizeInBytes(archivePath);
-        const resourceUrl = getCacheApiUrl(`caches/${cacheId.toString()}`);
-        const fd = fs.openSync(archivePath, 'r');
-        try {
-            yield Promise.all(parallelUploads.map(() => __awaiter(this, void 0, void 0, function* () {
-                while (offset < fileSize) {
-                    const chunkSize = Math.min(fileSize - offset, maxChunkSize);
-                    const start = offset;
-                    const end = offset + chunkSize - 1;
-                    offset += maxChunkSize;
-                    yield uploadChunk(httpClient, resourceUrl, () => fs
-                        .createReadStream(archivePath, {
-                        fd,
-                        start,
-                        end,
-                        autoClose: false
-                    })
-                        .on('error', error => {
-                        throw new Error(`Cache upload failed because file read failed with ${error.message}`);
-                    }), start, end);
-                }
-            })));
-        }
-        finally {
-            fs.closeSync(fd);
-        }
-        return;
-    });
-}
-function commitCache(httpClient, cacheId, filesize) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const commitCacheRequest = { size: filesize };
-        return yield (0, requestUtils_1.retryTypedResponse)('commitCache', () => __awaiter(this, void 0, void 0, function* () {
-            return httpClient.postJson(getCacheApiUrl(`caches/${cacheId.toString()}`), commitCacheRequest);
-        }));
-    });
-}
-function saveCache(cacheId, archivePath, key, options, s3Options, s3BucketName) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const httpClient = createHttpClient();
-        core.debug('Upload cache');
-        yield uploadFile(httpClient, cacheId, archivePath, key, options, s3Options, s3BucketName);
-        // Commit Cache
-        core.debug('Commiting cache');
-        const cacheSize = utils.getArchiveFileSizeInBytes(archivePath);
-        core.info(`Cache Size: ~${Math.round(cacheSize / (1024 * 1024))} MB (${cacheSize} B)`);
-        if (!s3Options) {
-            // already commit on S3
-            const commitCacheResponse = yield commitCache(httpClient, cacheId, cacheSize);
-            if (!(0, requestUtils_1.isSuccessStatusCode)(commitCacheResponse.statusCode)) {
-                throw new Error(`Cache service responded with ${commitCacheResponse.statusCode} during commit cache.`);
+async function uploadFileS3(s3options, s3BucketName, archivePath, key, concurrency, maxChunkSize) {
+    core.debug(`Start upload to S3 (bucket: ${s3BucketName})`);
+    const fileStream = fs.createReadStream(archivePath);
+    try {
+        const parallelUpload = new lib_storage_1.Upload({
+            client: new client_s3_1.S3Client(s3options),
+            queueSize: concurrency,
+            partSize: maxChunkSize,
+            params: {
+                Bucket: s3BucketName,
+                Key: key,
+                Body: fileStream
             }
-        }
-        core.info('Cache saved successfully');
-    });
+        });
+        parallelUpload.on('httpUploadProgress', (progress) => {
+            core.debug(`Uploading chunk progress: ${JSON.stringify(progress)}`);
+        });
+        await parallelUpload.done();
+    }
+    catch (error) {
+        throw new Error(`Cache upload failed because ${error}`);
+    }
+    return;
 }
-exports.saveCache = saveCache;
+async function uploadFile(httpClient, cacheId, archivePath, key, options, s3options, s3BucketName) {
+    // Upload Chunks
+    const uploadOptions = (0, options_1.getUploadOptions)(options);
+    const concurrency = utils.assertDefined('uploadConcurrency', uploadOptions.uploadConcurrency);
+    const maxChunkSize = utils.assertDefined('uploadChunkSize', uploadOptions.uploadChunkSize);
+    const parallelUploads = [...new Array(concurrency).keys()];
+    core.debug('Awaiting all uploads');
+    let offset = 0;
+    if (s3options && s3BucketName) {
+        await uploadFileS3(s3options, s3BucketName, archivePath, key, concurrency, maxChunkSize);
+        return;
+    }
+    const fileSize = utils.getArchiveFileSizeInBytes(archivePath);
+    const resourceUrl = getCacheApiUrl(`caches/${cacheId.toString()}`);
+    const fd = fs.openSync(archivePath, 'r');
+    try {
+        await Promise.all(parallelUploads.map(async () => {
+            while (offset < fileSize) {
+                const chunkSize = Math.min(fileSize - offset, maxChunkSize);
+                const start = offset;
+                const end = offset + chunkSize - 1;
+                offset += maxChunkSize;
+                await uploadChunk(httpClient, resourceUrl, () => fs
+                    .createReadStream(archivePath, {
+                    fd,
+                    start,
+                    end,
+                    autoClose: false
+                })
+                    .on('error', error => {
+                    throw new Error(`Cache upload failed because file read failed with ${error.message}`);
+                }), start, end);
+            }
+        }));
+    }
+    finally {
+        fs.closeSync(fd);
+    }
+    return;
+}
+async function commitCache(httpClient, cacheId, filesize) {
+    const commitCacheRequest = { size: filesize };
+    return await (0, requestUtils_1.retryTypedResponse)('commitCache', async () => httpClient.postJson(getCacheApiUrl(`caches/${cacheId.toString()}`), commitCacheRequest));
+}
+async function saveCache(cacheId, archivePath, key, options, s3Options, s3BucketName) {
+    const httpClient = createHttpClient();
+    core.debug('Upload cache');
+    await uploadFile(httpClient, cacheId, archivePath, key, options, s3Options, s3BucketName);
+    // Commit Cache
+    core.debug('Commiting cache');
+    const cacheSize = utils.getArchiveFileSizeInBytes(archivePath);
+    core.info(`Cache Size: ~${Math.round(cacheSize / (1024 * 1024))} MB (${cacheSize} B)`);
+    if (!s3Options) {
+        // already commit on S3
+        const commitCacheResponse = await commitCache(httpClient, cacheId, cacheSize);
+        if (!(0, requestUtils_1.isSuccessStatusCode)(commitCacheResponse.statusCode)) {
+            throw new Error(`Cache service responded with ${commitCacheResponse.statusCode} during commit cache.`);
+        }
+    }
+    core.info('Cache saved successfully');
+}
 //# sourceMappingURL=cacheHttpClient.js.map
 
 /***/ }),
@@ -64582,200 +62873,160 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __asyncValues = (this && this.__asyncValues) || function (o) {
-    if (!Symbol.asyncIterator) throw new TypeError("Symbol.asyncIterator is not defined.");
-    var m = o[Symbol.asyncIterator], i;
-    return m ? m.call(o) : (o = typeof __values === "function" ? __values(o) : o[Symbol.iterator](), i = {}, verb("next"), verb("throw"), verb("return"), i[Symbol.asyncIterator] = function () { return this; }, i);
-    function verb(n) { i[n] = o[n] && function (v) { return new Promise(function (resolve, reject) { v = o[n](v), settle(resolve, reject, v.done, v.value); }); }; }
-    function settle(resolve, reject, d, v) { Promise.resolve(v).then(function(v) { resolve({ value: v, done: d }); }, reject); }
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.isGhes = exports.assertDefined = exports.isZstdInstalled = exports.getGnuTarPathOnWindows = exports.getCacheFileName = exports.getCompressionMethod = exports.unlinkFile = exports.resolvePaths = exports.getArchiveFileSizeInBytes = exports.createTempDirectory = void 0;
+exports.createTempDirectory = createTempDirectory;
+exports.getArchiveFileSizeInBytes = getArchiveFileSizeInBytes;
+exports.resolvePaths = resolvePaths;
+exports.unlinkFile = unlinkFile;
+exports.getCompressionMethod = getCompressionMethod;
+exports.getCacheFileName = getCacheFileName;
+exports.getGnuTarPathOnWindows = getGnuTarPathOnWindows;
+exports.isZstdInstalled = isZstdInstalled;
+exports.assertDefined = assertDefined;
+exports.isGhes = isGhes;
 const core = __importStar(__nccwpck_require__(37484));
 const exec = __importStar(__nccwpck_require__(95236));
 const glob = __importStar(__nccwpck_require__(47206));
 const io = __importStar(__nccwpck_require__(94994));
+const crypto = __importStar(__nccwpck_require__(76982));
 const fs = __importStar(__nccwpck_require__(79896));
 const path = __importStar(__nccwpck_require__(16928));
-const semver = __importStar(__nccwpck_require__(39318));
+const semver = __importStar(__nccwpck_require__(28845));
 const util = __importStar(__nccwpck_require__(39023));
-const uuid_1 = __nccwpck_require__(31914);
 const constants_1 = __nccwpck_require__(56682);
 // From https://github.com/actions/toolkit/blob/main/packages/tool-cache/src/tool-cache.ts#L23
-function createTempDirectory() {
-    return __awaiter(this, void 0, void 0, function* () {
-        const IS_WINDOWS = process.platform === 'win32';
-        let tempDirectory = process.env['RUNNER_TEMP'] || '';
-        if (!tempDirectory) {
-            let baseLocation;
-            if (IS_WINDOWS) {
-                // On Windows use the USERPROFILE env variable
-                baseLocation = process.env['USERPROFILE'] || 'C:\\';
+async function createTempDirectory() {
+    const IS_WINDOWS = process.platform === 'win32';
+    let tempDirectory = process.env['RUNNER_TEMP'] || '';
+    if (!tempDirectory) {
+        let baseLocation;
+        if (IS_WINDOWS) {
+            // On Windows use the USERPROFILE env variable
+            baseLocation = process.env['USERPROFILE'] || 'C:\\';
+        }
+        else {
+            if (process.platform === 'darwin') {
+                baseLocation = '/Users';
             }
             else {
-                if (process.platform === 'darwin') {
-                    baseLocation = '/Users';
-                }
-                else {
-                    baseLocation = '/home';
-                }
+                baseLocation = '/home';
             }
-            tempDirectory = path.join(baseLocation, 'actions', 'temp');
         }
-        const dest = path.join(tempDirectory, (0, uuid_1.v4)());
-        yield io.mkdirP(dest);
-        return dest;
-    });
+        tempDirectory = path.join(baseLocation, 'runner', 'temp');
+    }
+    const dest = path.join(tempDirectory, crypto.randomUUID());
+    await io.mkdirP(dest);
+    return dest;
 }
-exports.createTempDirectory = createTempDirectory;
 function getArchiveFileSizeInBytes(filePath) {
     return fs.statSync(filePath).size;
 }
-exports.getArchiveFileSizeInBytes = getArchiveFileSizeInBytes;
-function resolvePaths(patterns) {
-    var _a, e_1, _b, _c;
-    var _d;
-    return __awaiter(this, void 0, void 0, function* () {
-        const paths = [];
-        const workspace = (_d = process.env['GITHUB_WORKSPACE']) !== null && _d !== void 0 ? _d : process.cwd();
-        const globber = yield glob.create(patterns.join('\n'), {
-            implicitDescendants: false
-        });
-        try {
-            for (var _e = true, _f = __asyncValues(globber.globGenerator()), _g; _g = yield _f.next(), _a = _g.done, !_a;) {
-                _c = _g.value;
-                _e = false;
-                try {
-                    const file = _c;
-                    const relativeFile = path
-                        .relative(workspace, file)
-                        .replace(new RegExp(`\\${path.sep}`, 'g'), '/');
-                    core.debug(`Matched: ${relativeFile}`);
-                    // Paths are made relative so the tar entries are all relative to the root of the workspace.
-                    if (relativeFile === '') {
-                        // path.relative returns empty string if workspace and file are equal
-                        paths.push('.');
-                    }
-                    else {
-                        paths.push(`${relativeFile}`);
-                    }
-                }
-                finally {
-                    _e = true;
-                }
-            }
-        }
-        catch (e_1_1) { e_1 = { error: e_1_1 }; }
-        finally {
-            try {
-                if (!_e && !_a && (_b = _f.return)) yield _b.call(_f);
-            }
-            finally { if (e_1) throw e_1.error; }
-        }
-        return paths;
+async function resolvePaths(patterns) {
+    const paths = [];
+    const workspace = process.env['GITHUB_WORKSPACE'] ?? process.cwd();
+    const globber = await glob.create(patterns.join('\n'), {
+        implicitDescendants: false
     });
-}
-exports.resolvePaths = resolvePaths;
-function unlinkFile(filePath) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return util.promisify(fs.unlink)(filePath);
-    });
-}
-exports.unlinkFile = unlinkFile;
-function getVersion(app, additionalArgs = []) {
-    return __awaiter(this, void 0, void 0, function* () {
-        let versionOutput = '';
-        additionalArgs.push('--version');
-        core.debug(`Checking ${app} ${additionalArgs.join(' ')}`);
-        try {
-            yield exec.exec(`${app}`, additionalArgs, {
-                ignoreReturnCode: true,
-                silent: true,
-                listeners: {
-                    stdout: (data) => (versionOutput += data.toString()),
-                    stderr: (data) => (versionOutput += data.toString())
-                }
-            });
-        }
-        catch (err) {
-            core.debug(err.message);
-        }
-        versionOutput = versionOutput.trim();
-        core.debug(versionOutput);
-        return versionOutput;
-    });
-}
-// Use zstandard if possible to maximize cache performance
-function getCompressionMethod() {
-    return __awaiter(this, void 0, void 0, function* () {
-        const versionOutput = yield getVersion('zstd', ['--quiet']);
-        const version = semver.clean(versionOutput);
-        core.debug(`zstd version: ${version}`);
-        if (versionOutput === '') {
-            return constants_1.CompressionMethod.Gzip;
+    for await (const file of globber.globGenerator()) {
+        const relativeFile = path
+            .relative(workspace, file)
+            .replace(new RegExp(`\\${path.sep}`, 'g'), '/');
+        core.debug(`Matched: ${relativeFile}`);
+        // Paths are made relative so the tar entries are all relative to the root of the workspace.
+        if (relativeFile === '') {
+            // path.relative returns empty string if workspace and file are equal
+            paths.push('.');
         }
         else {
-            return constants_1.CompressionMethod.ZstdWithoutLong;
+            paths.push(`${relativeFile}`);
         }
-    });
+    }
+    return paths;
 }
-exports.getCompressionMethod = getCompressionMethod;
+async function unlinkFile(filePath) {
+    return util.promisify(fs.unlink)(filePath);
+}
+async function getVersion(app, additionalArgs = []) {
+    let versionOutput = '';
+    additionalArgs.push('--version');
+    core.debug(`Checking ${app} ${additionalArgs.join(' ')}`);
+    try {
+        await exec.exec(`${app}`, additionalArgs, {
+            ignoreReturnCode: true,
+            silent: true,
+            listeners: {
+                stdout: (data) => (versionOutput += data.toString()),
+                stderr: (data) => (versionOutput += data.toString())
+            }
+        });
+    }
+    catch (err) {
+        core.debug(err.message);
+    }
+    versionOutput = versionOutput.trim();
+    core.debug(versionOutput);
+    return versionOutput;
+}
+// Use zstandard if possible to maximize cache performance
+async function getCompressionMethod() {
+    const versionOutput = await getVersion('zstd', ['--quiet']);
+    const version = semver.clean(versionOutput);
+    core.debug(`zstd version: ${version}`);
+    if (versionOutput === '') {
+        return constants_1.CompressionMethod.Gzip;
+    }
+    else {
+        return constants_1.CompressionMethod.ZstdWithoutLong;
+    }
+}
 function getCacheFileName(compressionMethod) {
     return compressionMethod === constants_1.CompressionMethod.Gzip
         ? constants_1.CacheFilename.Gzip
         : constants_1.CacheFilename.Zstd;
 }
-exports.getCacheFileName = getCacheFileName;
-function getGnuTarPathOnWindows() {
-    return __awaiter(this, void 0, void 0, function* () {
-        if (fs.existsSync(constants_1.GnuTarPathOnWindows)) {
-            return constants_1.GnuTarPathOnWindows;
-        }
-        const versionOutput = yield getVersion('tar');
-        return versionOutput.toLowerCase().includes('gnu tar') ? io.which('tar') : '';
-    });
+async function getGnuTarPathOnWindows() {
+    if (fs.existsSync(constants_1.GnuTarPathOnWindows)) {
+        return constants_1.GnuTarPathOnWindows;
+    }
+    const versionOutput = await getVersion('tar');
+    return versionOutput.toLowerCase().includes('gnu tar') ? io.which('tar') : '';
 }
-exports.getGnuTarPathOnWindows = getGnuTarPathOnWindows;
-function isZstdInstalled() {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            yield io.which('zstd', true);
-            return true;
-        }
-        catch (error) {
-            return false;
-        }
-    });
+async function isZstdInstalled() {
+    try {
+        await io.which('zstd', true);
+        return true;
+    }
+    catch (error) {
+        return false;
+    }
 }
-exports.isZstdInstalled = isZstdInstalled;
 function assertDefined(name, value) {
     if (value === undefined) {
         throw Error(`Expected ${name} but value was undefiend`);
     }
     return value;
 }
-exports.assertDefined = assertDefined;
 function isGhes() {
     const ghUrl = new URL(process.env['GITHUB_SERVER_URL'] || 'https://github.com');
     return ghUrl.hostname.toUpperCase() !== 'GITHUB.COM';
 }
-exports.isGhes = isGhes;
 //# sourceMappingURL=cacheUtils.js.map
 
 /***/ }),
@@ -64791,7 +63042,7 @@ var CacheFilename;
 (function (CacheFilename) {
     CacheFilename["Gzip"] = "cache.tgz";
     CacheFilename["Zstd"] = "cache.tzst";
-})(CacheFilename = exports.CacheFilename || (exports.CacheFilename = {}));
+})(CacheFilename || (exports.CacheFilename = CacheFilename = {}));
 var CompressionMethod;
 (function (CompressionMethod) {
     CompressionMethod["Gzip"] = "gzip";
@@ -64799,12 +63050,12 @@ var CompressionMethod;
     // This enum is for earlier version of zstd that does not have --long support
     CompressionMethod["ZstdWithoutLong"] = "zstd-without-long";
     CompressionMethod["Zstd"] = "zstd";
-})(CompressionMethod = exports.CompressionMethod || (exports.CompressionMethod = {}));
+})(CompressionMethod || (exports.CompressionMethod = CompressionMethod = {}));
 var ArchiveToolType;
 (function (ArchiveToolType) {
     ArchiveToolType["GNU"] = "gnu";
     ArchiveToolType["BSD"] = "bsd";
-})(ArchiveToolType = exports.ArchiveToolType || (exports.ArchiveToolType = {}));
+})(ArchiveToolType || (exports.ArchiveToolType = ArchiveToolType = {}));
 // The default number of retry attempts.
 exports.DefaultRetryAttempts = 2;
 // The default delay in milliseconds between retry attempts.
@@ -64844,24 +63095,29 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.downloadCacheStorageS3 = exports.downloadCacheStorageSDK = exports.downloadCacheHttpClientConcurrent = exports.downloadCacheHttpClient = exports.DownloadProgress = void 0;
+exports.DownloadProgress = void 0;
+exports.downloadCacheHttpClient = downloadCacheHttpClient;
+exports.downloadCacheHttpClientConcurrent = downloadCacheHttpClientConcurrent;
+exports.downloadCacheStorageSDK = downloadCacheStorageSDK;
+exports.downloadCacheStorageS3 = downloadCacheStorageS3;
 const core = __importStar(__nccwpck_require__(37484));
 const http_client_1 = __nccwpck_require__(54844);
 const storage_blob_1 = __nccwpck_require__(71400);
@@ -64873,23 +63129,28 @@ const util = __importStar(__nccwpck_require__(39023));
 const utils = __importStar(__nccwpck_require__(16712));
 const constants_1 = __nccwpck_require__(56682);
 const requestUtils_1 = __nccwpck_require__(32273);
-const abort_controller_1 = __nccwpck_require__(68110);
 /**
  * Pipes the body of a HTTP response to a stream
  *
  * @param response the HTTP response
  * @param output the writable stream
  */
-function pipeResponseToStream(response, output) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const pipeline = util.promisify(stream.pipeline);
-        yield pipeline(response.message, output);
-    });
+async function pipeResponseToStream(response, output) {
+    const pipeline = util.promisify(stream.pipeline);
+    await pipeline(response.message, output);
 }
 /**
  * Class for tracking the download state and displaying stats.
  */
 class DownloadProgress {
+    contentLength;
+    segmentIndex;
+    segmentSize;
+    segmentOffset;
+    receivedBytes;
+    startTime;
+    displayedComplete;
+    timeoutHandle;
     constructor(contentLength) {
         this.contentLength = contentLength;
         this.segmentIndex = 0;
@@ -64993,140 +63254,127 @@ exports.DownloadProgress = DownloadProgress;
  * @param archiveLocation the URL for the cache
  * @param archivePath the local path where the cache is saved
  */
-function downloadCacheHttpClient(archiveLocation, archivePath) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const writeStream = fs.createWriteStream(archivePath);
-        const httpClient = new http_client_1.HttpClient('actions/cache');
-        const downloadResponse = yield (0, requestUtils_1.retryHttpClientResponse)('downloadCache', () => __awaiter(this, void 0, void 0, function* () { return httpClient.get(archiveLocation); }));
-        // Abort download if no traffic received over the socket.
-        downloadResponse.message.socket.setTimeout(constants_1.SocketTimeout, () => {
-            downloadResponse.message.destroy();
-            core.debug(`Aborting download, socket timed out after ${constants_1.SocketTimeout} ms`);
-        });
-        yield pipeResponseToStream(downloadResponse, writeStream);
-        // Validate download size.
-        const contentLengthHeader = downloadResponse.message.headers['content-length'];
-        if (contentLengthHeader) {
-            const expectedLength = parseInt(contentLengthHeader);
-            const actualLength = utils.getArchiveFileSizeInBytes(archivePath);
-            if (actualLength !== expectedLength) {
-                throw new Error(`Incomplete download. Expected file size: ${expectedLength}, actual file size: ${actualLength}`);
-            }
-        }
-        else {
-            core.debug('Unable to validate download, no Content-Length header');
-        }
+async function downloadCacheHttpClient(archiveLocation, archivePath) {
+    const writeStream = fs.createWriteStream(archivePath);
+    const httpClient = new http_client_1.HttpClient('actions/cache');
+    const downloadResponse = await (0, requestUtils_1.retryHttpClientResponse)('downloadCache', async () => httpClient.get(archiveLocation));
+    // Abort download if no traffic received over the socket.
+    downloadResponse.message.socket.setTimeout(constants_1.SocketTimeout, () => {
+        downloadResponse.message.destroy();
+        core.debug(`Aborting download, socket timed out after ${constants_1.SocketTimeout} ms`);
     });
+    await pipeResponseToStream(downloadResponse, writeStream);
+    // Validate download size.
+    const contentLengthHeader = downloadResponse.message.headers['content-length'];
+    if (contentLengthHeader) {
+        const expectedLength = parseInt(contentLengthHeader);
+        const actualLength = utils.getArchiveFileSizeInBytes(archivePath);
+        if (actualLength !== expectedLength) {
+            throw new Error(`Incomplete download. Expected file size: ${expectedLength}, actual file size: ${actualLength}`);
+        }
+    }
+    else {
+        core.debug('Unable to validate download, no Content-Length header');
+    }
 }
-exports.downloadCacheHttpClient = downloadCacheHttpClient;
 /**
  * Download the cache using the Actions toolkit http-client concurrently
  *
  * @param archiveLocation the URL for the cache
  * @param archivePath the local path where the cache is saved
  */
-function downloadCacheHttpClientConcurrent(archiveLocation, archivePath, options) {
-    var _a;
-    return __awaiter(this, void 0, void 0, function* () {
-        const archiveDescriptor = yield fs.promises.open(archivePath, 'w');
-        const httpClient = new http_client_1.HttpClient('actions/cache', undefined, {
-            socketTimeout: options.timeoutInMs,
-            keepAlive: true
-        });
-        try {
-            const res = yield (0, requestUtils_1.retryHttpClientResponse)('downloadCacheMetadata', () => __awaiter(this, void 0, void 0, function* () { return yield httpClient.request('HEAD', archiveLocation, null, {}); }));
-            const lengthHeader = res.message.headers['content-length'];
-            if (lengthHeader === undefined || lengthHeader === null) {
-                throw new Error('Content-Length not found on blob response');
-            }
-            const length = parseInt(lengthHeader);
-            if (Number.isNaN(length)) {
-                throw new Error(`Could not interpret Content-Length: ${length}`);
-            }
-            const downloads = [];
-            const blockSize = 4 * 1024 * 1024;
-            for (let offset = 0; offset < length; offset += blockSize) {
-                const count = Math.min(blockSize, length - offset);
-                downloads.push({
-                    offset,
-                    promiseGetter: () => __awaiter(this, void 0, void 0, function* () {
-                        return yield downloadSegmentRetry(httpClient, archiveLocation, offset, count);
-                    })
-                });
-            }
-            // reverse to use .pop instead of .shift
-            downloads.reverse();
-            let actives = 0;
-            let bytesDownloaded = 0;
-            const progress = new DownloadProgress(length);
-            progress.startDisplayTimer();
-            const progressFn = progress.onProgress();
-            const activeDownloads = [];
-            let nextDownload;
-            const waitAndWrite = () => __awaiter(this, void 0, void 0, function* () {
-                const segment = yield Promise.race(Object.values(activeDownloads));
-                yield archiveDescriptor.write(segment.buffer, 0, segment.count, segment.offset);
-                actives--;
-                delete activeDownloads[segment.offset];
-                bytesDownloaded += segment.count;
-                progressFn({ loadedBytes: bytesDownloaded });
-            });
-            while ((nextDownload = downloads.pop())) {
-                activeDownloads[nextDownload.offset] = nextDownload.promiseGetter();
-                actives++;
-                if (actives >= ((_a = options.downloadConcurrency) !== null && _a !== void 0 ? _a : 10)) {
-                    yield waitAndWrite();
-                }
-            }
-            while (actives > 0) {
-                yield waitAndWrite();
-            }
-        }
-        finally {
-            httpClient.dispose();
-            yield archiveDescriptor.close();
-        }
+async function downloadCacheHttpClientConcurrent(archiveLocation, archivePath, options) {
+    const archiveDescriptor = await fs.promises.open(archivePath, 'w');
+    const httpClient = new http_client_1.HttpClient('actions/cache', undefined, {
+        socketTimeout: options.timeoutInMs,
+        keepAlive: true
     });
-}
-exports.downloadCacheHttpClientConcurrent = downloadCacheHttpClientConcurrent;
-function downloadSegmentRetry(httpClient, archiveLocation, offset, count) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const retries = 5;
-        let failures = 0;
-        while (true) {
-            try {
-                const timeout = 30000;
-                const result = yield promiseWithTimeout(timeout, downloadSegment(httpClient, archiveLocation, offset, count));
-                if (typeof result === 'string') {
-                    throw new Error('downloadSegmentRetry failed due to timeout');
-                }
-                return result;
-            }
-            catch (err) {
-                if (failures >= retries) {
-                    throw err;
-                }
-                failures++;
-            }
+    try {
+        const res = await (0, requestUtils_1.retryHttpClientResponse)('downloadCacheMetadata', async () => await httpClient.request('HEAD', archiveLocation, null, {}));
+        const lengthHeader = res.message.headers['content-length'];
+        if (lengthHeader === undefined || lengthHeader === null) {
+            throw new Error('Content-Length not found on blob response');
         }
-    });
-}
-function downloadSegment(httpClient, archiveLocation, offset, count) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const partRes = yield (0, requestUtils_1.retryHttpClientResponse)('downloadCachePart', () => __awaiter(this, void 0, void 0, function* () {
-            return yield httpClient.get(archiveLocation, {
-                Range: `bytes=${offset}-${offset + count - 1}`
+        const length = parseInt(lengthHeader);
+        if (Number.isNaN(length)) {
+            throw new Error(`Could not interpret Content-Length: ${length}`);
+        }
+        const downloads = [];
+        const blockSize = 4 * 1024 * 1024;
+        for (let offset = 0; offset < length; offset += blockSize) {
+            const count = Math.min(blockSize, length - offset);
+            downloads.push({
+                offset,
+                promiseGetter: async () => {
+                    return await downloadSegmentRetry(httpClient, archiveLocation, offset, count);
+                }
             });
-        }));
-        if (!partRes.readBodyBuffer) {
-            throw new Error('Expected HttpClientResponse to implement readBodyBuffer');
         }
-        return {
-            offset,
-            count,
-            buffer: yield partRes.readBodyBuffer()
+        // reverse to use .pop instead of .shift
+        downloads.reverse();
+        let actives = 0;
+        let bytesDownloaded = 0;
+        const progress = new DownloadProgress(length);
+        progress.startDisplayTimer();
+        const progressFn = progress.onProgress();
+        const activeDownloads = [];
+        let nextDownload;
+        const waitAndWrite = async () => {
+            const segment = await Promise.race(Object.values(activeDownloads));
+            await archiveDescriptor.write(segment.buffer, 0, segment.count, segment.offset);
+            actives--;
+            delete activeDownloads[segment.offset];
+            bytesDownloaded += segment.count;
+            progressFn({ loadedBytes: bytesDownloaded });
         };
-    });
+        while ((nextDownload = downloads.pop())) {
+            activeDownloads[nextDownload.offset] = nextDownload.promiseGetter();
+            actives++;
+            if (actives >= (options.downloadConcurrency ?? 10)) {
+                await waitAndWrite();
+            }
+        }
+        while (actives > 0) {
+            await waitAndWrite();
+        }
+    }
+    finally {
+        httpClient.dispose();
+        await archiveDescriptor.close();
+    }
+}
+async function downloadSegmentRetry(httpClient, archiveLocation, offset, count) {
+    const retries = 5;
+    let failures = 0;
+    while (true) {
+        try {
+            const timeout = 30000;
+            const result = await promiseWithTimeout(timeout, downloadSegment(httpClient, archiveLocation, offset, count));
+            if (typeof result === 'string') {
+                throw new Error('downloadSegmentRetry failed due to timeout');
+            }
+            return result;
+        }
+        catch (err) {
+            if (failures >= retries) {
+                throw err;
+            }
+            failures++;
+        }
+    }
+}
+async function downloadSegment(httpClient, archiveLocation, offset, count) {
+    const partRes = await (0, requestUtils_1.retryHttpClientResponse)('downloadCachePart', async () => await httpClient.get(archiveLocation, {
+        Range: `bytes=${offset}-${offset + count - 1}`
+    }));
+    if (!partRes.readBodyBuffer) {
+        throw new Error('Expected HttpClientResponse to implement readBodyBuffer');
+    }
+    return {
+        offset,
+        count,
+        buffer: await partRes.readBodyBuffer()
+    };
 }
 /**
  * Download the cache using the Azure Storage SDK.  Only call this method if the
@@ -65136,65 +63384,61 @@ function downloadSegment(httpClient, archiveLocation, offset, count) {
  * @param archivePath the local path where the cache is saved
  * @param options the download options with the defaults set
  */
-function downloadCacheStorageSDK(archiveLocation, archivePath, options) {
-    var _a;
-    return __awaiter(this, void 0, void 0, function* () {
-        const client = new storage_blob_1.BlockBlobClient(archiveLocation, undefined, {
-            retryOptions: {
-                // Override the timeout used when downloading each 4 MB chunk
-                // The default is 2 min / MB, which is way too slow
-                tryTimeoutInMs: options.timeoutInMs
-            }
-        });
-        const properties = yield client.getProperties();
-        const contentLength = (_a = properties.contentLength) !== null && _a !== void 0 ? _a : -1;
-        if (contentLength < 0) {
-            // We should never hit this condition, but just in case fall back to downloading the
-            // file as one large stream
-            core.debug('Unable to determine content length, downloading file with http-client...');
-            yield downloadCacheHttpClient(archiveLocation, archivePath);
-        }
-        else {
-            // Use downloadToBuffer for faster downloads, since internally it splits the
-            // file into 4 MB chunks which can then be parallelized and retried independently
-            //
-            // If the file exceeds the buffer maximum length (~1 GB on 32-bit systems and ~2 GB
-            // on 64-bit systems), split the download into multiple segments
-            // ~2 GB = 2147483647, beyond this, we start getting out of range error. So, capping it accordingly.
-            // Updated segment size to 128MB = 134217728 bytes, to complete a segment faster and fail fast
-            const maxSegmentSize = Math.min(134217728, buffer.constants.MAX_LENGTH);
-            const downloadProgress = new DownloadProgress(contentLength);
-            const fd = fs.openSync(archivePath, 'w');
-            try {
-                downloadProgress.startDisplayTimer();
-                const controller = new abort_controller_1.AbortController();
-                const abortSignal = controller.signal;
-                while (!downloadProgress.isDone()) {
-                    const segmentStart = downloadProgress.segmentOffset + downloadProgress.segmentSize;
-                    const segmentSize = Math.min(maxSegmentSize, contentLength - segmentStart);
-                    downloadProgress.nextSegment(segmentSize);
-                    const result = yield promiseWithTimeout(options.segmentTimeoutInMs || 3600000, client.downloadToBuffer(segmentStart, segmentSize, {
-                        abortSignal,
-                        concurrency: options.downloadConcurrency,
-                        onProgress: downloadProgress.onProgress()
-                    }));
-                    if (result === 'timeout') {
-                        controller.abort();
-                        throw new Error('Aborting cache download as the download time exceeded the timeout.');
-                    }
-                    else if (Buffer.isBuffer(result)) {
-                        fs.writeFileSync(fd, result);
-                    }
-                }
-            }
-            finally {
-                downloadProgress.stopDisplayTimer();
-                fs.closeSync(fd);
-            }
+async function downloadCacheStorageSDK(archiveLocation, archivePath, options) {
+    const client = new storage_blob_1.BlockBlobClient(archiveLocation, undefined, {
+        retryOptions: {
+            // Override the timeout used when downloading each 4 MB chunk
+            // The default is 2 min / MB, which is way too slow
+            tryTimeoutInMs: options.timeoutInMs
         }
     });
+    const properties = await client.getProperties();
+    const contentLength = properties.contentLength ?? -1;
+    if (contentLength < 0) {
+        // We should never hit this condition, but just in case fall back to downloading the
+        // file as one large stream
+        core.debug('Unable to determine content length, downloading file with http-client...');
+        await downloadCacheHttpClient(archiveLocation, archivePath);
+    }
+    else {
+        // Use downloadToBuffer for faster downloads, since internally it splits the
+        // file into 4 MB chunks which can then be parallelized and retried independently
+        //
+        // If the file exceeds the buffer maximum length (~1 GB on 32-bit systems and ~2 GB
+        // on 64-bit systems), split the download into multiple segments
+        // ~2 GB = 2147483647, beyond this, we start getting out of range error. So, capping it accordingly.
+        // Updated segment size to 128MB = 134217728 bytes, to complete a segment faster and fail fast
+        const maxSegmentSize = Math.min(134217728, buffer.constants.MAX_LENGTH);
+        const downloadProgress = new DownloadProgress(contentLength);
+        const fd = fs.openSync(archivePath, 'w');
+        try {
+            downloadProgress.startDisplayTimer();
+            const controller = new AbortController();
+            const abortSignal = controller.signal;
+            while (!downloadProgress.isDone()) {
+                const segmentStart = downloadProgress.segmentOffset + downloadProgress.segmentSize;
+                const segmentSize = Math.min(maxSegmentSize, contentLength - segmentStart);
+                downloadProgress.nextSegment(segmentSize);
+                const result = await promiseWithTimeout(options.segmentTimeoutInMs || 3600000, client.downloadToBuffer(segmentStart, segmentSize, {
+                    abortSignal,
+                    concurrency: options.downloadConcurrency,
+                    onProgress: downloadProgress.onProgress()
+                }));
+                if (result === 'timeout') {
+                    controller.abort();
+                    throw new Error('Aborting cache download as the download time exceeded the timeout.');
+                }
+                else if (Buffer.isBuffer(result)) {
+                    fs.writeFileSync(fd, result);
+                }
+            }
+        }
+        finally {
+            downloadProgress.stopDisplayTimer();
+            fs.closeSync(fd);
+        }
+    }
 }
-exports.downloadCacheStorageSDK = downloadCacheStorageSDK;
 /**
  * Download the cache using the AWS S3.  Only call this method if the use S3.
  *
@@ -65203,25 +63447,22 @@ exports.downloadCacheStorageSDK = downloadCacheStorageSDK;
  * @param s3Options: the option for AWS S3 client
  * @param s3BucketName: the name of bucket in AWS S3
  */
-function downloadCacheStorageS3(key, archivePath, s3Options, s3BucketName) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const s3client = new client_s3_1.S3Client(s3Options);
-        const param = {
-            Bucket: s3BucketName,
-            Key: key,
-        };
-        const response = yield s3client.send(new client_s3_1.GetObjectCommand(param));
-        if (!response.Body) {
-            throw new Error(`Incomplete download. response.Body is undefined from S3.`);
-        }
-        const fileStream = fs.createWriteStream(archivePath);
-        const pipeline = util.promisify(stream.pipeline);
-        yield pipeline(response.Body, fileStream);
-        return;
-    });
+async function downloadCacheStorageS3(key, archivePath, s3Options, s3BucketName) {
+    const s3client = new client_s3_1.S3Client(s3Options);
+    const param = {
+        Bucket: s3BucketName,
+        Key: key
+    };
+    const response = await s3client.send(new client_s3_1.GetObjectCommand(param));
+    if (!response.Body) {
+        throw new Error(`Incomplete download. response.Body is undefined from S3.`);
+    }
+    const fileStream = fs.createWriteStream(archivePath);
+    const pipeline = util.promisify(stream.pipeline);
+    await pipeline(response.Body, fileStream);
+    return;
 }
-exports.downloadCacheStorageS3 = downloadCacheStorageS3;
-const promiseWithTimeout = (timeoutMs, promise) => __awaiter(void 0, void 0, void 0, function* () {
+const promiseWithTimeout = async (timeoutMs, promise) => {
     let timeoutHandle;
     const timeoutPromise = new Promise(resolve => {
         timeoutHandle = setTimeout(() => resolve('timeout'), timeoutMs);
@@ -65230,7 +63471,7 @@ const promiseWithTimeout = (timeoutMs, promise) => __awaiter(void 0, void 0, voi
         clearTimeout(timeoutHandle);
         return result;
     });
-});
+};
 //# sourceMappingURL=downloadUtils.js.map
 
 /***/ }),
@@ -65256,24 +63497,30 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.retryHttpClientResponse = exports.retryTypedResponse = exports.retry = exports.isRetryableStatusCode = exports.isServerErrorStatusCode = exports.isSuccessStatusCode = void 0;
+exports.isSuccessStatusCode = isSuccessStatusCode;
+exports.isServerErrorStatusCode = isServerErrorStatusCode;
+exports.isRetryableStatusCode = isRetryableStatusCode;
+exports.retry = retry;
+exports.retryTypedResponse = retryTypedResponse;
+exports.retryHttpClientResponse = retryHttpClientResponse;
 const core = __importStar(__nccwpck_require__(37484));
 const http_client_1 = __nccwpck_require__(54844);
 const constants_1 = __nccwpck_require__(56682);
@@ -65283,14 +63530,12 @@ function isSuccessStatusCode(statusCode) {
     }
     return statusCode >= 200 && statusCode < 300;
 }
-exports.isSuccessStatusCode = isSuccessStatusCode;
 function isServerErrorStatusCode(statusCode) {
     if (!statusCode) {
         return true;
     }
     return statusCode >= 500;
 }
-exports.isServerErrorStatusCode = isServerErrorStatusCode;
 function isRetryableStatusCode(statusCode) {
     if (!statusCode) {
         return false;
@@ -65302,79 +63547,67 @@ function isRetryableStatusCode(statusCode) {
     ];
     return retryableStatusCodes.includes(statusCode);
 }
-exports.isRetryableStatusCode = isRetryableStatusCode;
-function sleep(milliseconds) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return new Promise(resolve => setTimeout(resolve, milliseconds));
-    });
+async function sleep(milliseconds) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
-function retry(name, method, getStatusCode, maxAttempts = constants_1.DefaultRetryAttempts, delay = constants_1.DefaultRetryDelay, onError = undefined) {
-    return __awaiter(this, void 0, void 0, function* () {
-        let errorMessage = '';
-        let attempt = 1;
-        while (attempt <= maxAttempts) {
-            let response = undefined;
-            let statusCode = undefined;
-            let isRetryable = false;
-            try {
-                response = yield method();
-            }
-            catch (error) {
-                if (onError) {
-                    response = onError(error);
-                }
-                isRetryable = true;
-                errorMessage = error.message;
-            }
-            if (response) {
-                statusCode = getStatusCode(response);
-                if (!isServerErrorStatusCode(statusCode)) {
-                    return response;
-                }
-            }
-            if (statusCode) {
-                isRetryable = isRetryableStatusCode(statusCode);
-                errorMessage = `Cache service responded with ${statusCode}`;
-            }
-            core.debug(`${name} - Attempt ${attempt} of ${maxAttempts} failed with error: ${errorMessage}`);
-            if (!isRetryable) {
-                core.debug(`${name} - Error is not retryable`);
-                break;
-            }
-            yield sleep(delay);
-            attempt++;
+async function retry(name, method, getStatusCode, maxAttempts = constants_1.DefaultRetryAttempts, delay = constants_1.DefaultRetryDelay, onError = undefined) {
+    let errorMessage = '';
+    let attempt = 1;
+    while (attempt <= maxAttempts) {
+        let response = undefined;
+        let statusCode = undefined;
+        let isRetryable = false;
+        try {
+            response = await method();
         }
-        throw Error(`${name} failed: ${errorMessage}`);
-    });
-}
-exports.retry = retry;
-function retryTypedResponse(name, method, maxAttempts = constants_1.DefaultRetryAttempts, delay = constants_1.DefaultRetryDelay) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return yield retry(name, method, (response) => response.statusCode, maxAttempts, delay, 
-        // If the error object contains the statusCode property, extract it and return
-        // an TypedResponse<T> so it can be processed by the retry logic.
-        (error) => {
-            if (error instanceof http_client_1.HttpClientError) {
-                return {
-                    statusCode: error.statusCode,
-                    result: null,
-                    headers: {},
-                    error
-                };
+        catch (error) {
+            if (onError) {
+                response = onError(error);
             }
-            else {
-                return undefined;
+            isRetryable = true;
+            errorMessage = error.message;
+        }
+        if (response) {
+            statusCode = getStatusCode(response);
+            if (!isServerErrorStatusCode(statusCode)) {
+                return response;
             }
-        });
+        }
+        if (statusCode) {
+            isRetryable = isRetryableStatusCode(statusCode);
+            errorMessage = `Cache service responded with ${statusCode}`;
+        }
+        core.debug(`${name} - Attempt ${attempt} of ${maxAttempts} failed with error: ${errorMessage}`);
+        if (!isRetryable) {
+            core.debug(`${name} - Error is not retryable`);
+            break;
+        }
+        await sleep(delay);
+        attempt++;
+    }
+    throw Error(`${name} failed: ${errorMessage}`);
+}
+async function retryTypedResponse(name, method, maxAttempts = constants_1.DefaultRetryAttempts, delay = constants_1.DefaultRetryDelay) {
+    return await retry(name, method, (response) => response.statusCode, maxAttempts, delay, 
+    // If the error object contains the statusCode property, extract it and return
+    // an TypedResponse<T> so it can be processed by the retry logic.
+    (error) => {
+        if (error instanceof http_client_1.HttpClientError) {
+            return {
+                statusCode: error.statusCode,
+                result: null,
+                headers: {},
+                error
+            };
+        }
+        else {
+            return undefined;
+        }
     });
 }
-exports.retryTypedResponse = retryTypedResponse;
-function retryHttpClientResponse(name, method, maxAttempts = constants_1.DefaultRetryAttempts, delay = constants_1.DefaultRetryDelay) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return yield retry(name, method, (response) => response.message.statusCode, maxAttempts, delay);
-    });
+async function retryHttpClientResponse(name, method, maxAttempts = constants_1.DefaultRetryAttempts, delay = constants_1.DefaultRetryDelay) {
+    return await retry(name, method, (response) => response.message.statusCode, maxAttempts, delay);
 }
-exports.retryHttpClientResponse = retryHttpClientResponse;
 //# sourceMappingURL=requestUtils.js.map
 
 /***/ }),
@@ -65400,24 +63633,27 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.createTar = exports.extractTar = exports.listTar = void 0;
+exports.listTar = listTar;
+exports.extractTar = extractTar;
+exports.createTar = createTar;
 const exec_1 = __nccwpck_require__(95236);
 const io = __importStar(__nccwpck_require__(94994));
 const fs_1 = __nccwpck_require__(79896);
@@ -65426,151 +63662,142 @@ const utils = __importStar(__nccwpck_require__(16712));
 const constants_1 = __nccwpck_require__(56682);
 const IS_WINDOWS = process.platform === 'win32';
 // Returns tar path and type: BSD or GNU
-function getTarPath() {
-    return __awaiter(this, void 0, void 0, function* () {
-        switch (process.platform) {
-            case 'win32': {
-                const gnuTar = yield utils.getGnuTarPathOnWindows();
-                const systemTar = constants_1.SystemTarPathOnWindows;
-                if (gnuTar) {
-                    // Use GNUtar as default on windows
-                    return { path: gnuTar, type: constants_1.ArchiveToolType.GNU };
-                }
-                else if ((0, fs_1.existsSync)(systemTar)) {
-                    return { path: systemTar, type: constants_1.ArchiveToolType.BSD };
-                }
-                break;
+async function getTarPath() {
+    switch (process.platform) {
+        case 'win32': {
+            const gnuTar = await utils.getGnuTarPathOnWindows();
+            const systemTar = constants_1.SystemTarPathOnWindows;
+            if (gnuTar) {
+                // Use GNUtar as default on windows
+                return { path: gnuTar, type: constants_1.ArchiveToolType.GNU };
             }
-            case 'darwin': {
-                const gnuTar = yield io.which('gtar', false);
-                if (gnuTar) {
-                    // fix permission denied errors when extracting BSD tar archive with GNU tar - https://github.com/actions/cache/issues/527
-                    return { path: gnuTar, type: constants_1.ArchiveToolType.GNU };
-                }
-                else {
-                    return {
-                        path: yield io.which('tar', true),
-                        type: constants_1.ArchiveToolType.BSD
-                    };
-                }
+            else if ((0, fs_1.existsSync)(systemTar)) {
+                return { path: systemTar, type: constants_1.ArchiveToolType.BSD };
             }
-            default:
-                break;
+            break;
         }
-        // Default assumption is GNU tar is present in path
-        return {
-            path: yield io.which('tar', true),
-            type: constants_1.ArchiveToolType.GNU
-        };
-    });
+        case 'darwin': {
+            const gnuTar = await io.which('gtar', false);
+            if (gnuTar) {
+                // fix permission denied errors when extracting BSD tar archive with GNU tar - https://github.com/actions/cache/issues/527
+                return { path: gnuTar, type: constants_1.ArchiveToolType.GNU };
+            }
+            else {
+                return {
+                    path: await io.which('tar', true),
+                    type: constants_1.ArchiveToolType.BSD
+                };
+            }
+        }
+        default:
+            break;
+    }
+    // Default assumption is GNU tar is present in path
+    return {
+        path: await io.which('tar', true),
+        type: constants_1.ArchiveToolType.GNU
+    };
 }
 // Return arguments for tar as per tarPath, compressionMethod, method type and os
-function getTarArgs(tarPath, compressionMethod, type, archivePath = '') {
-    return __awaiter(this, void 0, void 0, function* () {
-        const args = [`"${tarPath.path}"`];
-        const cacheFileName = utils.getCacheFileName(compressionMethod);
-        const tarFile = 'cache.tar';
-        const workingDirectory = getWorkingDirectory();
-        // Speficic args for BSD tar on windows for workaround
-        const BSD_TAR_ZSTD = tarPath.type === constants_1.ArchiveToolType.BSD &&
-            compressionMethod !== constants_1.CompressionMethod.Gzip &&
-            IS_WINDOWS;
-        // Method specific args
-        switch (type) {
-            case 'create':
-                args.push('--posix', '-cf', BSD_TAR_ZSTD
-                    ? tarFile
-                    : cacheFileName.replace(new RegExp(`\\${path.sep}`, 'g'), '/'), '--exclude', BSD_TAR_ZSTD
-                    ? tarFile
-                    : cacheFileName.replace(new RegExp(`\\${path.sep}`, 'g'), '/'), '-P', '-C', workingDirectory.replace(new RegExp(`\\${path.sep}`, 'g'), '/'), '--files-from', constants_1.ManifestFilename);
+async function getTarArgs(tarPath, compressionMethod, type, archivePath = '') {
+    const args = [`"${tarPath.path}"`];
+    const cacheFileName = utils.getCacheFileName(compressionMethod);
+    const tarFile = 'cache.tar';
+    const workingDirectory = getWorkingDirectory();
+    // Speficic args for BSD tar on windows for workaround
+    const BSD_TAR_ZSTD = tarPath.type === constants_1.ArchiveToolType.BSD &&
+        compressionMethod !== constants_1.CompressionMethod.Gzip &&
+        IS_WINDOWS;
+    // Method specific args
+    switch (type) {
+        case 'create':
+            args.push('--posix', '-cf', BSD_TAR_ZSTD
+                ? tarFile
+                : cacheFileName.replace(new RegExp(`\\${path.sep}`, 'g'), '/'), '--exclude', BSD_TAR_ZSTD
+                ? tarFile
+                : cacheFileName.replace(new RegExp(`\\${path.sep}`, 'g'), '/'), '-P', '-C', workingDirectory.replace(new RegExp(`\\${path.sep}`, 'g'), '/'), '--files-from', constants_1.ManifestFilename);
+            break;
+        case 'extract':
+            args.push('-xf', BSD_TAR_ZSTD
+                ? tarFile
+                : archivePath.replace(new RegExp(`\\${path.sep}`, 'g'), '/'), '-P', '-C', workingDirectory.replace(new RegExp(`\\${path.sep}`, 'g'), '/'));
+            break;
+        case 'list':
+            args.push('-tf', BSD_TAR_ZSTD
+                ? tarFile
+                : archivePath.replace(new RegExp(`\\${path.sep}`, 'g'), '/'), '-P');
+            break;
+    }
+    // Platform specific args
+    if (tarPath.type === constants_1.ArchiveToolType.GNU) {
+        switch (process.platform) {
+            case 'win32':
+                args.push('--force-local');
                 break;
-            case 'extract':
-                args.push('-xf', BSD_TAR_ZSTD
-                    ? tarFile
-                    : archivePath.replace(new RegExp(`\\${path.sep}`, 'g'), '/'), '-P', '-C', workingDirectory.replace(new RegExp(`\\${path.sep}`, 'g'), '/'));
-                break;
-            case 'list':
-                args.push('-tf', BSD_TAR_ZSTD
-                    ? tarFile
-                    : archivePath.replace(new RegExp(`\\${path.sep}`, 'g'), '/'), '-P');
+            case 'darwin':
+                args.push('--delay-directory-restore');
                 break;
         }
-        // Platform specific args
-        if (tarPath.type === constants_1.ArchiveToolType.GNU) {
-            switch (process.platform) {
-                case 'win32':
-                    args.push('--force-local');
-                    break;
-                case 'darwin':
-                    args.push('--delay-directory-restore');
-                    break;
-            }
-        }
-        return args;
-    });
+    }
+    return args;
 }
 // Returns commands to run tar and compression program
-function getCommands(compressionMethod, type, archivePath = '') {
-    return __awaiter(this, void 0, void 0, function* () {
-        let args;
-        const tarPath = yield getTarPath();
-        const tarArgs = yield getTarArgs(tarPath, compressionMethod, type, archivePath);
-        const compressionArgs = type !== 'create'
-            ? yield getDecompressionProgram(tarPath, compressionMethod, archivePath)
-            : yield getCompressionProgram(tarPath, compressionMethod);
-        const BSD_TAR_ZSTD = tarPath.type === constants_1.ArchiveToolType.BSD &&
-            compressionMethod !== constants_1.CompressionMethod.Gzip &&
-            IS_WINDOWS;
-        if (BSD_TAR_ZSTD && type !== 'create') {
-            args = [[...compressionArgs].join(' '), [...tarArgs].join(' ')];
-        }
-        else {
-            args = [[...tarArgs].join(' '), [...compressionArgs].join(' ')];
-        }
-        if (BSD_TAR_ZSTD) {
-            return args;
-        }
-        return [args.join(' ')];
-    });
+async function getCommands(compressionMethod, type, archivePath = '') {
+    let args;
+    const tarPath = await getTarPath();
+    const tarArgs = await getTarArgs(tarPath, compressionMethod, type, archivePath);
+    const compressionArgs = type !== 'create'
+        ? await getDecompressionProgram(tarPath, compressionMethod, archivePath)
+        : await getCompressionProgram(tarPath, compressionMethod);
+    const BSD_TAR_ZSTD = tarPath.type === constants_1.ArchiveToolType.BSD &&
+        compressionMethod !== constants_1.CompressionMethod.Gzip &&
+        IS_WINDOWS;
+    if (BSD_TAR_ZSTD && type !== 'create') {
+        args = [[...compressionArgs].join(' '), [...tarArgs].join(' ')];
+    }
+    else {
+        args = [[...tarArgs].join(' '), [...compressionArgs].join(' ')];
+    }
+    if (BSD_TAR_ZSTD) {
+        return args;
+    }
+    return [args.join(' ')];
 }
 function getWorkingDirectory() {
-    var _a;
-    return (_a = process.env['GITHUB_WORKSPACE']) !== null && _a !== void 0 ? _a : process.cwd();
+    return process.env['GITHUB_WORKSPACE'] ?? process.cwd();
 }
 // Common function for extractTar and listTar to get the compression method
-function getDecompressionProgram(tarPath, compressionMethod, archivePath) {
-    return __awaiter(this, void 0, void 0, function* () {
-        // -d: Decompress.
-        // unzstd is equivalent to 'zstd -d'
-        // --long=#: Enables long distance matching with # bits. Maximum is 30 (1GB) on 32-bit OS and 31 (2GB) on 64-bit.
-        // Using 30 here because we also support 32-bit self-hosted runners.
-        const BSD_TAR_ZSTD = tarPath.type === constants_1.ArchiveToolType.BSD &&
-            compressionMethod !== constants_1.CompressionMethod.Gzip &&
-            IS_WINDOWS;
-        switch (compressionMethod) {
-            case constants_1.CompressionMethod.Zstd:
-                return BSD_TAR_ZSTD
-                    ? [
-                        'zstd -d --long=30 --force -o',
-                        constants_1.TarFilename,
-                        archivePath.replace(new RegExp(`\\${path.sep}`, 'g'), '/')
-                    ]
-                    : [
-                        '--use-compress-program',
-                        IS_WINDOWS ? '"zstd -d --long=30"' : 'unzstd --long=30'
-                    ];
-            case constants_1.CompressionMethod.ZstdWithoutLong:
-                return BSD_TAR_ZSTD
-                    ? [
-                        'zstd -d --force -o',
-                        constants_1.TarFilename,
-                        archivePath.replace(new RegExp(`\\${path.sep}`, 'g'), '/')
-                    ]
-                    : ['--use-compress-program', IS_WINDOWS ? '"zstd -d"' : 'unzstd'];
-            default:
-                return ['-z'];
-        }
-    });
+async function getDecompressionProgram(tarPath, compressionMethod, archivePath) {
+    // -d: Decompress.
+    // unzstd is equivalent to 'zstd -d'
+    // --long=#: Enables long distance matching with # bits. Maximum is 30 (1GB) on 32-bit OS and 31 (2GB) on 64-bit.
+    // Using 30 here because we also support 32-bit self-hosted runners.
+    const BSD_TAR_ZSTD = tarPath.type === constants_1.ArchiveToolType.BSD &&
+        compressionMethod !== constants_1.CompressionMethod.Gzip &&
+        IS_WINDOWS;
+    switch (compressionMethod) {
+        case constants_1.CompressionMethod.Zstd:
+            return BSD_TAR_ZSTD
+                ? [
+                    'zstd -d --long=30 --force -o',
+                    constants_1.TarFilename,
+                    archivePath.replace(new RegExp(`\\${path.sep}`, 'g'), '/')
+                ]
+                : [
+                    '--use-compress-program',
+                    IS_WINDOWS ? '"zstd -d --long=30"' : 'unzstd --long=30'
+                ];
+        case constants_1.CompressionMethod.ZstdWithoutLong:
+            return BSD_TAR_ZSTD
+                ? [
+                    'zstd -d --force -o',
+                    constants_1.TarFilename,
+                    archivePath.replace(new RegExp(`\\${path.sep}`, 'g'), '/')
+                ]
+                : ['--use-compress-program', IS_WINDOWS ? '"zstd -d"' : 'unzstd'];
+        default:
+            return ['-z'];
+    }
 }
 // Used for creating the archive
 // -T#: Compress using # working thread. If # is 0, attempt to detect and use the number of physical CPU cores.
@@ -65578,82 +63805,69 @@ function getDecompressionProgram(tarPath, compressionMethod, archivePath) {
 // --long=#: Enables long distance matching with # bits. Maximum is 30 (1GB) on 32-bit OS and 31 (2GB) on 64-bit.
 // Using 30 here because we also support 32-bit self-hosted runners.
 // Long range mode is added to zstd in v1.3.2 release, so we will not use --long in older version of zstd.
-function getCompressionProgram(tarPath, compressionMethod) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const cacheFileName = utils.getCacheFileName(compressionMethod);
-        const BSD_TAR_ZSTD = tarPath.type === constants_1.ArchiveToolType.BSD &&
-            compressionMethod !== constants_1.CompressionMethod.Gzip &&
-            IS_WINDOWS;
-        switch (compressionMethod) {
-            case constants_1.CompressionMethod.Zstd:
-                return BSD_TAR_ZSTD
-                    ? [
-                        'zstd -T0 --long=30 --force -o',
-                        cacheFileName.replace(new RegExp(`\\${path.sep}`, 'g'), '/'),
-                        constants_1.TarFilename
-                    ]
-                    : [
-                        '--use-compress-program',
-                        IS_WINDOWS ? '"zstd -T0 --long=30"' : 'zstdmt --long=30'
-                    ];
-            case constants_1.CompressionMethod.ZstdWithoutLong:
-                return BSD_TAR_ZSTD
-                    ? [
-                        'zstd -T0 --force -o',
-                        cacheFileName.replace(new RegExp(`\\${path.sep}`, 'g'), '/'),
-                        constants_1.TarFilename
-                    ]
-                    : ['--use-compress-program', IS_WINDOWS ? '"zstd -T0"' : 'zstdmt'];
-            default:
-                return ['-z'];
-        }
-    });
+async function getCompressionProgram(tarPath, compressionMethod) {
+    const cacheFileName = utils.getCacheFileName(compressionMethod);
+    const BSD_TAR_ZSTD = tarPath.type === constants_1.ArchiveToolType.BSD &&
+        compressionMethod !== constants_1.CompressionMethod.Gzip &&
+        IS_WINDOWS;
+    switch (compressionMethod) {
+        case constants_1.CompressionMethod.Zstd:
+            return BSD_TAR_ZSTD
+                ? [
+                    'zstd -T0 --long=30 --force -o',
+                    cacheFileName.replace(new RegExp(`\\${path.sep}`, 'g'), '/'),
+                    constants_1.TarFilename
+                ]
+                : [
+                    '--use-compress-program',
+                    IS_WINDOWS ? '"zstd -T0 --long=30"' : 'zstdmt --long=30'
+                ];
+        case constants_1.CompressionMethod.ZstdWithoutLong:
+            return BSD_TAR_ZSTD
+                ? [
+                    'zstd -T0 --force -o',
+                    cacheFileName.replace(new RegExp(`\\${path.sep}`, 'g'), '/'),
+                    constants_1.TarFilename
+                ]
+                : ['--use-compress-program', IS_WINDOWS ? '"zstd -T0"' : 'zstdmt'];
+        default:
+            return ['-z'];
+    }
 }
 // Executes all commands as separate processes
-function execCommands(commands, cwd) {
-    return __awaiter(this, void 0, void 0, function* () {
-        for (const command of commands) {
-            try {
-                yield (0, exec_1.exec)(command, undefined, {
-                    cwd,
-                    env: Object.assign(Object.assign({}, process.env), { MSYS: 'winsymlinks:nativestrict' })
-                });
-            }
-            catch (error) {
-                throw new Error(`${command.split(' ')[0]} failed with error: ${error === null || error === void 0 ? void 0 : error.message}`);
-            }
+async function execCommands(commands, cwd) {
+    for (const command of commands) {
+        try {
+            await (0, exec_1.exec)(command, undefined, {
+                cwd,
+                env: { ...process.env, MSYS: 'winsymlinks:nativestrict' }
+            });
         }
-    });
+        catch (error) {
+            throw new Error(`${command.split(' ')[0]} failed with error: ${error?.message}`);
+        }
+    }
 }
 // List the contents of a tar
-function listTar(archivePath, compressionMethod) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const commands = yield getCommands(compressionMethod, 'list', archivePath);
-        yield execCommands(commands);
-    });
+async function listTar(archivePath, compressionMethod) {
+    const commands = await getCommands(compressionMethod, 'list', archivePath);
+    await execCommands(commands);
 }
-exports.listTar = listTar;
 // Extract a tar
-function extractTar(archivePath, compressionMethod) {
-    return __awaiter(this, void 0, void 0, function* () {
-        // Create directory to extract tar into
-        const workingDirectory = getWorkingDirectory();
-        yield io.mkdirP(workingDirectory);
-        const commands = yield getCommands(compressionMethod, 'extract', archivePath);
-        yield execCommands(commands);
-    });
+async function extractTar(archivePath, compressionMethod) {
+    // Create directory to extract tar into
+    const workingDirectory = getWorkingDirectory();
+    await io.mkdirP(workingDirectory);
+    const commands = await getCommands(compressionMethod, 'extract', archivePath);
+    await execCommands(commands);
 }
-exports.extractTar = extractTar;
 // Create a tar
-function createTar(archiveFolder, sourceDirectories, compressionMethod) {
-    return __awaiter(this, void 0, void 0, function* () {
-        // Write source directories to manifest.txt to avoid command length limits
-        (0, fs_1.writeFileSync)(path.join(archiveFolder, constants_1.ManifestFilename), sourceDirectories.join('\n'));
-        const commands = yield getCommands(compressionMethod, 'create');
-        yield execCommands(commands, archiveFolder);
-    });
+async function createTar(archiveFolder, sourceDirectories, compressionMethod) {
+    // Write source directories to manifest.txt to avoid command length limits
+    (0, fs_1.writeFileSync)(path.join(archiveFolder, constants_1.ManifestFilename), sourceDirectories.join('\n'));
+    const commands = await getCommands(compressionMethod, 'create');
+    await execCommands(commands, archiveFolder);
 }
-exports.createTar = createTar;
 //# sourceMappingURL=tar.js.map
 
 /***/ }),
@@ -65679,15 +63893,26 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getDownloadOptions = exports.getUploadOptions = void 0;
+exports.getUploadOptions = getUploadOptions;
+exports.getDownloadOptions = getDownloadOptions;
 const core = __importStar(__nccwpck_require__(37484));
 /**
  * Returns a copy of the upload options with defaults filled in.
@@ -65711,7 +63936,6 @@ function getUploadOptions(copy) {
     core.debug(`Upload chunk size: ${result.uploadChunkSize}`);
     return result;
 }
-exports.getUploadOptions = getUploadOptions;
 /**
  * Returns a copy of the download options with defaults filled in.
  *
@@ -65760,8 +63984,2817 @@ function getDownloadOptions(copy) {
     core.debug(`Lookup only: ${result.lookupOnly}`);
     return result;
 }
-exports.getDownloadOptions = getDownloadOptions;
 //# sourceMappingURL=options.js.map
+
+/***/ }),
+
+/***/ 40648:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const ANY = Symbol('SemVer ANY')
+// hoisted class for cyclic dependency
+class Comparator {
+  static get ANY () {
+    return ANY
+  }
+
+  constructor (comp, options) {
+    options = parseOptions(options)
+
+    if (comp instanceof Comparator) {
+      if (comp.loose === !!options.loose) {
+        return comp
+      } else {
+        comp = comp.value
+      }
+    }
+
+    comp = comp.trim().split(/\s+/).join(' ')
+    debug('comparator', comp, options)
+    this.options = options
+    this.loose = !!options.loose
+    this.parse(comp)
+
+    if (this.semver === ANY) {
+      this.value = ''
+    } else {
+      this.value = this.operator + this.semver.version
+    }
+
+    debug('comp', this)
+  }
+
+  parse (comp) {
+    const r = this.options.loose ? re[t.COMPARATORLOOSE] : re[t.COMPARATOR]
+    const m = comp.match(r)
+
+    if (!m) {
+      throw new TypeError(`Invalid comparator: ${comp}`)
+    }
+
+    this.operator = m[1] !== undefined ? m[1] : ''
+    if (this.operator === '=') {
+      this.operator = ''
+    }
+
+    // if it literally is just '>' or '' then allow anything.
+    if (!m[2]) {
+      this.semver = ANY
+    } else {
+      this.semver = new SemVer(m[2], this.options.loose)
+    }
+  }
+
+  toString () {
+    return this.value
+  }
+
+  test (version) {
+    debug('Comparator.test', version, this.options.loose)
+
+    if (this.semver === ANY || version === ANY) {
+      return true
+    }
+
+    if (typeof version === 'string') {
+      try {
+        version = new SemVer(version, this.options)
+      } catch (er) {
+        return false
+      }
+    }
+
+    return cmp(version, this.operator, this.semver, this.options)
+  }
+
+  intersects (comp, options) {
+    if (!(comp instanceof Comparator)) {
+      throw new TypeError('a Comparator is required')
+    }
+
+    if (this.operator === '') {
+      if (this.value === '') {
+        return true
+      }
+      return new Range(comp.value, options).test(this.value)
+    } else if (comp.operator === '') {
+      if (comp.value === '') {
+        return true
+      }
+      return new Range(this.value, options).test(comp.semver)
+    }
+
+    options = parseOptions(options)
+
+    // Special cases where nothing can possibly be lower
+    if (options.includePrerelease &&
+      (this.value === '<0.0.0-0' || comp.value === '<0.0.0-0')) {
+      return false
+    }
+    if (!options.includePrerelease &&
+      (this.value.startsWith('<0.0.0') || comp.value.startsWith('<0.0.0'))) {
+      return false
+    }
+
+    // Same direction increasing (> or >=)
+    if (this.operator.startsWith('>') && comp.operator.startsWith('>')) {
+      return true
+    }
+    // Same direction decreasing (< or <=)
+    if (this.operator.startsWith('<') && comp.operator.startsWith('<')) {
+      return true
+    }
+    // same SemVer and both sides are inclusive (<= or >=)
+    if (
+      (this.semver.version === comp.semver.version) &&
+      this.operator.includes('=') && comp.operator.includes('=')) {
+      return true
+    }
+    // opposite directions less than
+    if (cmp(this.semver, '<', comp.semver, options) &&
+      this.operator.startsWith('>') && comp.operator.startsWith('<')) {
+      return true
+    }
+    // opposite directions greater than
+    if (cmp(this.semver, '>', comp.semver, options) &&
+      this.operator.startsWith('<') && comp.operator.startsWith('>')) {
+      return true
+    }
+    return false
+  }
+}
+
+module.exports = Comparator
+
+const parseOptions = __nccwpck_require__(39075)
+const { safeRe: re, t } = __nccwpck_require__(2190)
+const cmp = __nccwpck_require__(92199)
+const debug = __nccwpck_require__(144)
+const SemVer = __nccwpck_require__(52652)
+const Range = __nccwpck_require__(48303)
+
+
+/***/ }),
+
+/***/ 48303:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SPACE_CHARACTERS = /\s+/g
+
+// hoisted class for cyclic dependency
+class Range {
+  constructor (range, options) {
+    options = parseOptions(options)
+
+    if (range instanceof Range) {
+      if (
+        range.loose === !!options.loose &&
+        range.includePrerelease === !!options.includePrerelease
+      ) {
+        return range
+      } else {
+        return new Range(range.raw, options)
+      }
+    }
+
+    if (range instanceof Comparator) {
+      // just put it in the set and return
+      this.raw = range.value
+      this.set = [[range]]
+      this.formatted = undefined
+      return this
+    }
+
+    this.options = options
+    this.loose = !!options.loose
+    this.includePrerelease = !!options.includePrerelease
+
+    // First reduce all whitespace as much as possible so we do not have to rely
+    // on potentially slow regexes like \s*. This is then stored and used for
+    // future error messages as well.
+    this.raw = range.trim().replace(SPACE_CHARACTERS, ' ')
+
+    // First, split on ||
+    this.set = this.raw
+      .split('||')
+      // map the range to a 2d array of comparators
+      .map(r => this.parseRange(r.trim()))
+      // throw out any comparator lists that are empty
+      // this generally means that it was not a valid range, which is allowed
+      // in loose mode, but will still throw if the WHOLE range is invalid.
+      .filter(c => c.length)
+
+    if (!this.set.length) {
+      throw new TypeError(`Invalid SemVer Range: ${this.raw}`)
+    }
+
+    // if we have any that are not the null set, throw out null sets.
+    if (this.set.length > 1) {
+      // keep the first one, in case they're all null sets
+      const first = this.set[0]
+      this.set = this.set.filter(c => !isNullSet(c[0]))
+      if (this.set.length === 0) {
+        this.set = [first]
+      } else if (this.set.length > 1) {
+        // if we have any that are *, then the range is just *
+        for (const c of this.set) {
+          if (c.length === 1 && isAny(c[0])) {
+            this.set = [c]
+            break
+          }
+        }
+      }
+    }
+
+    this.formatted = undefined
+  }
+
+  get range () {
+    if (this.formatted === undefined) {
+      this.formatted = ''
+      for (let i = 0; i < this.set.length; i++) {
+        if (i > 0) {
+          this.formatted += '||'
+        }
+        const comps = this.set[i]
+        for (let k = 0; k < comps.length; k++) {
+          if (k > 0) {
+            this.formatted += ' '
+          }
+          this.formatted += comps[k].toString().trim()
+        }
+      }
+    }
+    return this.formatted
+  }
+
+  format () {
+    return this.range
+  }
+
+  toString () {
+    return this.range
+  }
+
+  parseRange (range) {
+    // strip build metadata so it can't bleed into the version
+    range = range.replace(BUILDSTRIPRE, '')
+
+    // memoize range parsing for performance.
+    // this is a very hot path, and fully deterministic.
+    const memoOpts =
+      (this.options.includePrerelease && FLAG_INCLUDE_PRERELEASE) |
+      (this.options.loose && FLAG_LOOSE)
+    const memoKey = memoOpts + ':' + range
+    const cached = cache.get(memoKey)
+    if (cached) {
+      return cached
+    }
+
+    const loose = this.options.loose
+    // `1.2.3 - 1.2.4` => `>=1.2.3 <=1.2.4`
+    const hr = loose ? re[t.HYPHENRANGELOOSE] : re[t.HYPHENRANGE]
+    range = range.replace(hr, hyphenReplace(this.options.includePrerelease))
+    debug('hyphen replace', range)
+
+    // `> 1.2.3 < 1.2.5` => `>1.2.3 <1.2.5`
+    range = range.replace(re[t.COMPARATORTRIM], comparatorTrimReplace)
+    debug('comparator trim', range)
+
+    // `~ 1.2.3` => `~1.2.3`
+    range = range.replace(re[t.TILDETRIM], tildeTrimReplace)
+    debug('tilde trim', range)
+
+    // `^ 1.2.3` => `^1.2.3`
+    range = range.replace(re[t.CARETTRIM], caretTrimReplace)
+    debug('caret trim', range)
+
+    // At this point, the range is completely trimmed and
+    // ready to be split into comparators.
+
+    let rangeList = range
+      .split(' ')
+      .map(comp => parseComparator(comp, this.options))
+      .join(' ')
+      .split(/\s+/)
+      // >=0.0.0 is equivalent to *
+      .map(comp => replaceGTE0(comp, this.options))
+
+    if (loose) {
+      // in loose mode, throw out any that are not valid comparators
+      rangeList = rangeList.filter(comp => {
+        debug('loose invalid filter', comp, this.options)
+        return !!comp.match(re[t.COMPARATORLOOSE])
+      })
+    }
+    debug('range list', rangeList)
+
+    // if any comparators are the null set, then replace with JUST null set
+    // if more than one comparator, remove any * comparators
+    // also, don't include the same comparator more than once
+    const rangeMap = new Map()
+    const comparators = rangeList.map(comp => new Comparator(comp, this.options))
+    for (const comp of comparators) {
+      if (isNullSet(comp)) {
+        return [comp]
+      }
+      rangeMap.set(comp.value, comp)
+    }
+    if (rangeMap.size > 1 && rangeMap.has('')) {
+      rangeMap.delete('')
+    }
+
+    const result = [...rangeMap.values()]
+    cache.set(memoKey, result)
+    return result
+  }
+
+  intersects (range, options) {
+    if (!(range instanceof Range)) {
+      throw new TypeError('a Range is required')
+    }
+
+    return this.set.some((thisComparators) => {
+      return (
+        isSatisfiable(thisComparators, options) &&
+        range.set.some((rangeComparators) => {
+          return (
+            isSatisfiable(rangeComparators, options) &&
+            thisComparators.every((thisComparator) => {
+              return rangeComparators.every((rangeComparator) => {
+                return thisComparator.intersects(rangeComparator, options)
+              })
+            })
+          )
+        })
+      )
+    })
+  }
+
+  // if ANY of the sets match ALL of its comparators, then pass
+  test (version) {
+    if (!version) {
+      return false
+    }
+
+    if (typeof version === 'string') {
+      try {
+        version = new SemVer(version, this.options)
+      } catch (er) {
+        return false
+      }
+    }
+
+    for (let i = 0; i < this.set.length; i++) {
+      if (testSet(this.set[i], version, this.options)) {
+        return true
+      }
+    }
+    return false
+  }
+}
+
+module.exports = Range
+
+const LRU = __nccwpck_require__(36610)
+const cache = new LRU()
+
+const parseOptions = __nccwpck_require__(39075)
+const Comparator = __nccwpck_require__(40648)
+const debug = __nccwpck_require__(144)
+const SemVer = __nccwpck_require__(52652)
+const {
+  safeRe: re,
+  src,
+  t,
+  comparatorTrimReplace,
+  tildeTrimReplace,
+  caretTrimReplace,
+} = __nccwpck_require__(2190)
+const { FLAG_INCLUDE_PRERELEASE, FLAG_LOOSE } = __nccwpck_require__(34578)
+
+// unbounded global build-metadata stripper used by parseRange
+const BUILDSTRIPRE = new RegExp(src[t.BUILD], 'g')
+
+const isNullSet = c => c.value === '<0.0.0-0'
+const isAny = c => c.value === ''
+
+// take a set of comparators and determine whether there
+// exists a version which can satisfy it
+const isSatisfiable = (comparators, options) => {
+  let result = true
+  const remainingComparators = comparators.slice()
+  let testComparator = remainingComparators.pop()
+
+  while (result && remainingComparators.length) {
+    result = remainingComparators.every((otherComparator) => {
+      return testComparator.intersects(otherComparator, options)
+    })
+
+    testComparator = remainingComparators.pop()
+  }
+
+  return result
+}
+
+// comprised of xranges, tildes, stars, and gtlt's at this point.
+// already replaced the hyphen ranges
+// turn into a set of JUST comparators.
+const parseComparator = (comp, options) => {
+  comp = comp.replace(re[t.BUILD], '')
+  debug('comp', comp, options)
+  comp = replaceCarets(comp, options)
+  debug('caret', comp)
+  comp = replaceTildes(comp, options)
+  debug('tildes', comp)
+  comp = replaceXRanges(comp, options)
+  debug('xrange', comp)
+  comp = replaceStars(comp, options)
+  debug('stars', comp)
+  return comp
+}
+
+const isX = id => !id || id.toLowerCase() === 'x' || id === '*'
+
+const invalidXRangeOrder = (M, m, p) => (
+  (isX(M) && !isX(m)) ||
+  (isX(m) && p && !isX(p))
+)
+
+// ~, ~> --> * (any, kinda silly)
+// ~2, ~2.x, ~2.x.x, ~>2, ~>2.x ~>2.x.x --> >=2.0.0 <3.0.0-0
+// ~2.0, ~2.0.x, ~>2.0, ~>2.0.x --> >=2.0.0 <2.1.0-0
+// ~1.2, ~1.2.x, ~>1.2, ~>1.2.x --> >=1.2.0 <1.3.0-0
+// ~1.2.3, ~>1.2.3 --> >=1.2.3 <1.3.0-0
+// ~1.2.0, ~>1.2.0 --> >=1.2.0 <1.3.0-0
+// ~0.0.1 --> >=0.0.1 <0.1.0-0
+const replaceTildes = (comp, options) => {
+  return comp
+    .trim()
+    .split(/\s+/)
+    .map((c) => replaceTilde(c, options))
+    .join(' ')
+}
+
+const replaceTilde = (comp, options) => {
+  const r = options.loose ? re[t.TILDELOOSE] : re[t.TILDE]
+  // if we're including prereleases in the match, then the lower bound is
+  // -0, the lowest possible prerelease value, just like x-ranges and carets.
+  // this keeps `~1.2` equivalent to the `1.2.x` x-range it's documented as.
+  const z = options.includePrerelease ? '-0' : ''
+  return comp.replace(r, (_, M, m, p, pr) => {
+    debug('tilde', comp, _, M, m, p, pr)
+    let ret
+
+    if (isX(M)) {
+      ret = ''
+    } else if (isX(m)) {
+      ret = `>=${M}.0.0${z} <${+M + 1}.0.0-0`
+    } else if (isX(p)) {
+      // ~1.2 == >=1.2.0 <1.3.0-0
+      ret = `>=${M}.${m}.0${z} <${M}.${+m + 1}.0-0`
+    } else if (pr) {
+      debug('replaceTilde pr', pr)
+      ret = `>=${M}.${m}.${p}-${pr
+      } <${M}.${+m + 1}.0-0`
+    } else {
+      // ~1.2.3 == >=1.2.3 <1.3.0-0
+      ret = `>=${M}.${m}.${p
+      } <${M}.${+m + 1}.0-0`
+    }
+
+    debug('tilde return', ret)
+    return ret
+  })
+}
+
+// ^ --> * (any, kinda silly)
+// ^2, ^2.x, ^2.x.x --> >=2.0.0 <3.0.0-0
+// ^2.0, ^2.0.x --> >=2.0.0 <3.0.0-0
+// ^1.2, ^1.2.x --> >=1.2.0 <2.0.0-0
+// ^1.2.3 --> >=1.2.3 <2.0.0-0
+// ^1.2.0 --> >=1.2.0 <2.0.0-0
+// ^0.0.1 --> >=0.0.1 <0.0.2-0
+// ^0.1.0 --> >=0.1.0 <0.2.0-0
+const replaceCarets = (comp, options) => {
+  return comp
+    .trim()
+    .split(/\s+/)
+    .map((c) => replaceCaret(c, options))
+    .join(' ')
+}
+
+const replaceCaret = (comp, options) => {
+  debug('caret', comp, options)
+  const r = options.loose ? re[t.CARETLOOSE] : re[t.CARET]
+  const z = options.includePrerelease ? '-0' : ''
+  return comp.replace(r, (_, M, m, p, pr) => {
+    debug('caret', comp, _, M, m, p, pr)
+    let ret
+
+    if (isX(M)) {
+      ret = ''
+    } else if (isX(m)) {
+      ret = `>=${M}.0.0${z} <${+M + 1}.0.0-0`
+    } else if (isX(p)) {
+      if (M === '0') {
+        ret = `>=${M}.${m}.0${z} <${M}.${+m + 1}.0-0`
+      } else {
+        ret = `>=${M}.${m}.0${z} <${+M + 1}.0.0-0`
+      }
+    } else if (pr) {
+      debug('replaceCaret pr', pr)
+      if (M === '0') {
+        if (m === '0') {
+          ret = `>=${M}.${m}.${p}-${pr
+          } <${M}.${m}.${+p + 1}-0`
+        } else {
+          ret = `>=${M}.${m}.${p}-${pr
+          } <${M}.${+m + 1}.0-0`
+        }
+      } else {
+        ret = `>=${M}.${m}.${p}-${pr
+        } <${+M + 1}.0.0-0`
+      }
+    } else {
+      debug('no pr')
+      if (M === '0') {
+        if (m === '0') {
+          ret = `>=${M}.${m}.${p
+          } <${M}.${m}.${+p + 1}-0`
+        } else {
+          ret = `>=${M}.${m}.${p
+          } <${M}.${+m + 1}.0-0`
+        }
+      } else {
+        ret = `>=${M}.${m}.${p
+        } <${+M + 1}.0.0-0`
+      }
+    }
+
+    debug('caret return', ret)
+    return ret
+  })
+}
+
+const replaceXRanges = (comp, options) => {
+  debug('replaceXRanges', comp, options)
+  return comp
+    .split(/\s+/)
+    .map((c) => replaceXRange(c, options))
+    .join(' ')
+}
+
+const replaceXRange = (comp, options) => {
+  comp = comp.trim()
+  const r = options.loose ? re[t.XRANGELOOSE] : re[t.XRANGE]
+  return comp.replace(r, (ret, gtlt, M, m, p, pr) => {
+    debug('xRange', comp, ret, gtlt, M, m, p, pr)
+    if (invalidXRangeOrder(M, m, p)) {
+      return comp
+    }
+
+    const xM = isX(M)
+    const xm = xM || isX(m)
+    const xp = xm || isX(p)
+    const anyX = xp
+
+    if (gtlt === '=' && anyX) {
+      gtlt = ''
+    }
+
+    // if we're including prereleases in the match, then we need
+    // to fix this to -0, the lowest possible prerelease value
+    pr = options.includePrerelease ? '-0' : ''
+
+    if (xM) {
+      if (gtlt === '>' || gtlt === '<') {
+        // nothing is allowed
+        ret = '<0.0.0-0'
+      } else {
+        // nothing is forbidden
+        ret = '*'
+      }
+    } else if (gtlt && anyX) {
+      // we know patch is an x, because we have any x at all.
+      // replace X with 0
+      if (xm) {
+        m = 0
+      }
+      p = 0
+
+      if (gtlt === '>') {
+        // >1 => >=2.0.0
+        // >1.2 => >=1.3.0
+        gtlt = '>='
+        if (xm) {
+          M = +M + 1
+          m = 0
+          p = 0
+        } else {
+          m = +m + 1
+          p = 0
+        }
+      } else if (gtlt === '<=') {
+        // <=0.7.x is actually <0.8.0, since any 0.7.x should
+        // pass.  Similarly, <=7.x is actually <8.0.0, etc.
+        gtlt = '<'
+        if (xm) {
+          M = +M + 1
+        } else {
+          m = +m + 1
+        }
+      }
+
+      if (gtlt === '<') {
+        pr = '-0'
+      }
+
+      ret = `${gtlt + M}.${m}.${p}${pr}`
+    } else if (xm) {
+      ret = `>=${M}.0.0${pr} <${+M + 1}.0.0-0`
+    } else if (xp) {
+      ret = `>=${M}.${m}.0${pr
+      } <${M}.${+m + 1}.0-0`
+    }
+
+    debug('xRange return', ret)
+
+    return ret
+  })
+}
+
+// Because * is AND-ed with everything else in the comparator,
+// and '' means "any version", just remove the *s entirely.
+const replaceStars = (comp, options) => {
+  debug('replaceStars', comp, options)
+  // Looseness is ignored here.  star is always as loose as it gets!
+  return comp
+    .trim()
+    .replace(re[t.STAR], '')
+}
+
+const replaceGTE0 = (comp, options) => {
+  debug('replaceGTE0', comp, options)
+  return comp
+    .trim()
+    .replace(re[options.includePrerelease ? t.GTE0PRE : t.GTE0], '')
+}
+
+// This function is passed to string.replace(re[t.HYPHENRANGE])
+// M, m, patch, prerelease, build
+// 1.2 - 3.4.5 => >=1.2.0 <=3.4.5
+// 1.2.3 - 3.4 => >=1.2.0 <3.5.0-0 Any 3.4.x will do
+// 1.2 - 3.4 => >=1.2.0 <3.5.0-0
+// TODO build?
+const hyphenReplace = incPr => ($0,
+  from, fM, fm, fp, fpr, fb,
+  to, tM, tm, tp, tpr) => {
+  if (isX(fM)) {
+    from = ''
+  } else if (isX(fm)) {
+    from = `>=${fM}.0.0${incPr ? '-0' : ''}`
+  } else if (isX(fp)) {
+    from = `>=${fM}.${fm}.0${incPr ? '-0' : ''}`
+  } else if (fpr) {
+    from = `>=${from}`
+  } else {
+    from = `>=${from}${incPr ? '-0' : ''}`
+  }
+
+  if (isX(tM)) {
+    to = ''
+  } else if (isX(tm)) {
+    to = `<${+tM + 1}.0.0-0`
+  } else if (isX(tp)) {
+    to = `<${tM}.${+tm + 1}.0-0`
+  } else if (tpr) {
+    to = `<=${tM}.${tm}.${tp}-${tpr}`
+  } else if (incPr) {
+    to = `<${tM}.${tm}.${+tp + 1}-0`
+  } else {
+    to = `<=${to}`
+  }
+
+  return `${from} ${to}`.trim()
+}
+
+const testSet = (set, version, options) => {
+  for (let i = 0; i < set.length; i++) {
+    if (!set[i].test(version)) {
+      return false
+    }
+  }
+
+  if (version.prerelease.length && !options.includePrerelease) {
+    // Find the set of versions that are allowed to have prereleases
+    // For example, ^1.2.3-pr.1 desugars to >=1.2.3-pr.1 <2.0.0
+    // That should allow `1.2.3-pr.2` to pass.
+    // However, `1.2.4-alpha.notready` should NOT be allowed,
+    // even though it's within the range set by the comparators.
+    for (let i = 0; i < set.length; i++) {
+      debug(set[i].semver)
+      if (set[i].semver === Comparator.ANY) {
+        continue
+      }
+
+      if (set[i].semver.prerelease.length > 0) {
+        const allowed = set[i].semver
+        if (allowed.major === version.major &&
+            allowed.minor === version.minor &&
+            allowed.patch === version.patch) {
+          return true
+        }
+      }
+    }
+
+    // Version has a -pre, but it's not one of the ones we like.
+    return false
+  }
+
+  return true
+}
+
+
+/***/ }),
+
+/***/ 52652:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const debug = __nccwpck_require__(144)
+const { MAX_LENGTH, MAX_SAFE_INTEGER } = __nccwpck_require__(34578)
+const { safeRe: re, t } = __nccwpck_require__(2190)
+
+const parseOptions = __nccwpck_require__(39075)
+const { compareIdentifiers } = __nccwpck_require__(57243)
+
+const isPrereleaseIdentifier = (prerelease, identifier) => {
+  const identifiers = identifier.split('.')
+  if (identifiers.length > prerelease.length) {
+    return false
+  }
+
+  for (let i = 0; i < identifiers.length; i++) {
+    if (compareIdentifiers(prerelease[i], identifiers[i]) !== 0) {
+      return false
+    }
+  }
+
+  return true
+}
+
+class SemVer {
+  constructor (version, options) {
+    options = parseOptions(options)
+
+    if (version instanceof SemVer) {
+      if (version.loose === !!options.loose &&
+        version.includePrerelease === !!options.includePrerelease) {
+        return version
+      } else {
+        version = version.version
+      }
+    } else if (typeof version !== 'string') {
+      throw new TypeError(`Invalid version. Must be a string. Got type "${typeof version}".`)
+    }
+
+    if (version.length > MAX_LENGTH) {
+      throw new TypeError(
+        `version is longer than ${MAX_LENGTH} characters`
+      )
+    }
+
+    debug('SemVer', version, options)
+    this.options = options
+    this.loose = !!options.loose
+    // this isn't actually relevant for versions, but keep it so that we
+    // don't run into trouble passing this.options around.
+    this.includePrerelease = !!options.includePrerelease
+
+    const m = version.trim().match(options.loose ? re[t.LOOSE] : re[t.FULL])
+
+    if (!m) {
+      throw new TypeError(`Invalid Version: ${version}`)
+    }
+
+    this.raw = version
+
+    // these are actually numbers
+    this.major = +m[1]
+    this.minor = +m[2]
+    this.patch = +m[3]
+
+    if (this.major > MAX_SAFE_INTEGER || this.major < 0) {
+      throw new TypeError('Invalid major version')
+    }
+
+    if (this.minor > MAX_SAFE_INTEGER || this.minor < 0) {
+      throw new TypeError('Invalid minor version')
+    }
+
+    if (this.patch > MAX_SAFE_INTEGER || this.patch < 0) {
+      throw new TypeError('Invalid patch version')
+    }
+
+    // numberify any prerelease numeric ids
+    if (!m[4]) {
+      this.prerelease = []
+    } else {
+      this.prerelease = m[4].split('.').map((id) => {
+        if (/^[0-9]+$/.test(id)) {
+          const num = +id
+          if (num >= 0 && num < MAX_SAFE_INTEGER) {
+            return num
+          }
+        }
+        return id
+      })
+    }
+
+    this.build = m[5] ? m[5].split('.') : []
+    this.format()
+  }
+
+  format () {
+    this.version = `${this.major}.${this.minor}.${this.patch}`
+    if (this.prerelease.length) {
+      this.version += `-${this.prerelease.join('.')}`
+    }
+    return this.version
+  }
+
+  toString () {
+    return this.version
+  }
+
+  compare (other) {
+    debug('SemVer.compare', this.version, this.options, other)
+    if (!(other instanceof SemVer)) {
+      if (typeof other === 'string' && other === this.version) {
+        return 0
+      }
+      other = new SemVer(other, this.options)
+    }
+
+    if (other.version === this.version) {
+      return 0
+    }
+
+    return this.compareMain(other) || this.comparePre(other)
+  }
+
+  compareMain (other) {
+    if (!(other instanceof SemVer)) {
+      other = new SemVer(other, this.options)
+    }
+
+    if (this.major < other.major) {
+      return -1
+    }
+    if (this.major > other.major) {
+      return 1
+    }
+    if (this.minor < other.minor) {
+      return -1
+    }
+    if (this.minor > other.minor) {
+      return 1
+    }
+    if (this.patch < other.patch) {
+      return -1
+    }
+    if (this.patch > other.patch) {
+      return 1
+    }
+    return 0
+  }
+
+  comparePre (other) {
+    if (!(other instanceof SemVer)) {
+      other = new SemVer(other, this.options)
+    }
+
+    // NOT having a prerelease is > having one
+    if (this.prerelease.length && !other.prerelease.length) {
+      return -1
+    } else if (!this.prerelease.length && other.prerelease.length) {
+      return 1
+    } else if (!this.prerelease.length && !other.prerelease.length) {
+      return 0
+    }
+
+    let i = 0
+    do {
+      const a = this.prerelease[i]
+      const b = other.prerelease[i]
+      debug('prerelease compare', i, a, b)
+      if (a === undefined && b === undefined) {
+        return 0
+      } else if (b === undefined) {
+        return 1
+      } else if (a === undefined) {
+        return -1
+      } else if (a === b) {
+        continue
+      } else {
+        return compareIdentifiers(a, b)
+      }
+    } while (++i)
+  }
+
+  compareBuild (other) {
+    if (!(other instanceof SemVer)) {
+      other = new SemVer(other, this.options)
+    }
+
+    let i = 0
+    do {
+      const a = this.build[i]
+      const b = other.build[i]
+      debug('build compare', i, a, b)
+      if (a === undefined && b === undefined) {
+        return 0
+      } else if (b === undefined) {
+        return 1
+      } else if (a === undefined) {
+        return -1
+      } else if (a === b) {
+        continue
+      } else {
+        return compareIdentifiers(a, b)
+      }
+    } while (++i)
+  }
+
+  // preminor will bump the version up to the next minor release, and immediately
+  // down to pre-release. premajor and prepatch work the same way.
+  inc (release, identifier, identifierBase) {
+    if (release.startsWith('pre')) {
+      if (!identifier && identifierBase === false) {
+        throw new Error('invalid increment argument: identifier is empty')
+      }
+      // Avoid an invalid semver results
+      if (identifier) {
+        const match = `-${identifier}`.match(this.options.loose ? re[t.PRERELEASELOOSE] : re[t.PRERELEASE])
+        if (!match || match[1] !== identifier) {
+          throw new Error(`invalid identifier: ${identifier}`)
+        }
+      }
+    }
+
+    switch (release) {
+      case 'premajor':
+        this.prerelease.length = 0
+        this.patch = 0
+        this.minor = 0
+        this.major++
+        this.inc('pre', identifier, identifierBase)
+        break
+      case 'preminor':
+        this.prerelease.length = 0
+        this.patch = 0
+        this.minor++
+        this.inc('pre', identifier, identifierBase)
+        break
+      case 'prepatch':
+        // If this is already a prerelease, it will bump to the next version
+        // drop any prereleases that might already exist, since they are not
+        // relevant at this point.
+        this.prerelease.length = 0
+        this.inc('patch', identifier, identifierBase)
+        this.inc('pre', identifier, identifierBase)
+        break
+      // If the input is a non-prerelease version, this acts the same as
+      // prepatch.
+      case 'prerelease':
+        if (this.prerelease.length === 0) {
+          this.inc('patch', identifier, identifierBase)
+        }
+        this.inc('pre', identifier, identifierBase)
+        break
+      case 'release':
+        if (this.prerelease.length === 0) {
+          throw new Error(`version ${this.raw} is not a prerelease`)
+        }
+        this.prerelease.length = 0
+        break
+
+      case 'major':
+        // If this is a pre-major version, bump up to the same major version.
+        // Otherwise increment major.
+        // 1.0.0-5 bumps to 1.0.0
+        // 1.1.0 bumps to 2.0.0
+        if (
+          this.minor !== 0 ||
+          this.patch !== 0 ||
+          this.prerelease.length === 0
+        ) {
+          this.major++
+        }
+        this.minor = 0
+        this.patch = 0
+        this.prerelease = []
+        break
+      case 'minor':
+        // If this is a pre-minor version, bump up to the same minor version.
+        // Otherwise increment minor.
+        // 1.2.0-5 bumps to 1.2.0
+        // 1.2.1 bumps to 1.3.0
+        if (this.patch !== 0 || this.prerelease.length === 0) {
+          this.minor++
+        }
+        this.patch = 0
+        this.prerelease = []
+        break
+      case 'patch':
+        // If this is not a pre-release version, it will increment the patch.
+        // If it is a pre-release it will bump up to the same patch version.
+        // 1.2.0-5 patches to 1.2.0
+        // 1.2.0 patches to 1.2.1
+        if (this.prerelease.length === 0) {
+          this.patch++
+        }
+        this.prerelease = []
+        break
+      // This probably shouldn't be used publicly.
+      // 1.0.0 'pre' would become 1.0.0-0 which is the wrong direction.
+      case 'pre': {
+        const base = Number(identifierBase) ? 1 : 0
+
+        if (this.prerelease.length === 0) {
+          this.prerelease = [base]
+        } else {
+          let i = this.prerelease.length
+          while (--i >= 0) {
+            if (typeof this.prerelease[i] === 'number') {
+              this.prerelease[i]++
+              i = -2
+            }
+          }
+          if (i === -1) {
+            // didn't increment anything
+            if (identifier === this.prerelease.join('.') && identifierBase === false) {
+              throw new Error('invalid increment argument: identifier already exists')
+            }
+            this.prerelease.push(base)
+          }
+        }
+        if (identifier) {
+          // 1.2.0-beta.1 bumps to 1.2.0-beta.2,
+          // 1.2.0-beta.fooblz or 1.2.0-beta bumps to 1.2.0-beta.0
+          let prerelease = [identifier, base]
+          if (identifierBase === false) {
+            prerelease = [identifier]
+          }
+          if (isPrereleaseIdentifier(this.prerelease, identifier)) {
+            const prereleaseBase = this.prerelease[identifier.split('.').length]
+            if (isNaN(prereleaseBase)) {
+              this.prerelease = prerelease
+            }
+          } else {
+            this.prerelease = prerelease
+          }
+        }
+        break
+      }
+      default:
+        throw new Error(`invalid increment argument: ${release}`)
+    }
+    this.raw = this.format()
+    if (this.build.length) {
+      this.raw += `+${this.build.join('.')}`
+    }
+    return this
+  }
+}
+
+module.exports = SemVer
+
+
+/***/ }),
+
+/***/ 76878:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const parse = __nccwpck_require__(99080)
+const clean = (version, options) => {
+  const s = parse(version.trim().replace(/^[=v]+/, ''), options)
+  return s ? s.version : null
+}
+module.exports = clean
+
+
+/***/ }),
+
+/***/ 92199:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const eq = __nccwpck_require__(6793)
+const neq = __nccwpck_require__(72231)
+const gt = __nccwpck_require__(51636)
+const gte = __nccwpck_require__(9873)
+const lt = __nccwpck_require__(65659)
+const lte = __nccwpck_require__(97096)
+
+const cmp = (a, op, b, loose) => {
+  switch (op) {
+    case '===':
+      if (typeof a === 'object') {
+        a = a.version
+      }
+      if (typeof b === 'object') {
+        b = b.version
+      }
+      return a === b
+
+    case '!==':
+      if (typeof a === 'object') {
+        a = a.version
+      }
+      if (typeof b === 'object') {
+        b = b.version
+      }
+      return a !== b
+
+    case '':
+    case '=':
+    case '==':
+      return eq(a, b, loose)
+
+    case '!=':
+      return neq(a, b, loose)
+
+    case '>':
+      return gt(a, b, loose)
+
+    case '>=':
+      return gte(a, b, loose)
+
+    case '<':
+      return lt(a, b, loose)
+
+    case '<=':
+      return lte(a, b, loose)
+
+    default:
+      throw new TypeError(`Invalid operator: ${op}`)
+  }
+}
+module.exports = cmp
+
+
+/***/ }),
+
+/***/ 56258:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SemVer = __nccwpck_require__(52652)
+const parse = __nccwpck_require__(99080)
+const { safeRe: re, t } = __nccwpck_require__(2190)
+
+const coerce = (version, options) => {
+  if (version instanceof SemVer) {
+    return version
+  }
+
+  if (typeof version === 'number') {
+    version = String(version)
+  }
+
+  if (typeof version !== 'string') {
+    return null
+  }
+
+  options = options || {}
+
+  let match = null
+  if (!options.rtl) {
+    match = version.match(options.includePrerelease ? re[t.COERCEFULL] : re[t.COERCE])
+  } else {
+    // Find the right-most coercible string that does not share
+    // a terminus with a more left-ward coercible string.
+    // Eg, '1.2.3.4' wants to coerce '2.3.4', not '3.4' or '4'
+    // With includePrerelease option set, '1.2.3.4-rc' wants to coerce '2.3.4-rc', not '2.3.4'
+    //
+    // Walk through the string checking with a /g regexp
+    // Manually set the index so as to pick up overlapping matches.
+    // Stop when we get a match that ends at the string end, since no
+    // coercible string can be more right-ward without the same terminus.
+    const coerceRtlRegex = options.includePrerelease ? re[t.COERCERTLFULL] : re[t.COERCERTL]
+    let next
+    while ((next = coerceRtlRegex.exec(version)) &&
+        (!match || match.index + match[0].length !== version.length)
+    ) {
+      if (!match ||
+            next.index + next[0].length !== match.index + match[0].length) {
+        match = next
+      }
+      coerceRtlRegex.lastIndex = next.index + next[1].length + next[2].length
+    }
+    // leave it in a clean state
+    coerceRtlRegex.lastIndex = -1
+  }
+
+  if (match === null) {
+    return null
+  }
+
+  const major = match[2]
+  const minor = match[3] || '0'
+  const patch = match[4] || '0'
+  const prerelease = options.includePrerelease && match[5] ? `-${match[5]}` : ''
+  const build = options.includePrerelease && match[6] ? `+${match[6]}` : ''
+
+  return parse(`${major}.${minor}.${patch}${prerelease}${build}`, options)
+}
+module.exports = coerce
+
+
+/***/ }),
+
+/***/ 81445:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SemVer = __nccwpck_require__(52652)
+const compareBuild = (a, b, loose) => {
+  const versionA = new SemVer(a, loose)
+  const versionB = new SemVer(b, loose)
+  return versionA.compare(versionB) || versionA.compareBuild(versionB)
+}
+module.exports = compareBuild
+
+
+/***/ }),
+
+/***/ 75899:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const compare = __nccwpck_require__(14312)
+const compareLoose = (a, b) => compare(a, b, true)
+module.exports = compareLoose
+
+
+/***/ }),
+
+/***/ 14312:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SemVer = __nccwpck_require__(52652)
+const compare = (a, b, loose) =>
+  new SemVer(a, loose).compare(new SemVer(b, loose))
+
+module.exports = compare
+
+
+/***/ }),
+
+/***/ 65472:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const parse = __nccwpck_require__(99080)
+
+const diff = (version1, version2) => {
+  const v1 = parse(version1, null, true)
+  const v2 = parse(version2, null, true)
+  const comparison = v1.compare(v2)
+
+  if (comparison === 0) {
+    return null
+  }
+
+  const v1Higher = comparison > 0
+  const highVersion = v1Higher ? v1 : v2
+  const lowVersion = v1Higher ? v2 : v1
+  const highHasPre = !!highVersion.prerelease.length
+  const lowHasPre = !!lowVersion.prerelease.length
+
+  if (lowHasPre && !highHasPre) {
+    // Going from prerelease -> no prerelease requires some special casing
+
+    // If the low version has only a major, then it will always be a major
+    // Some examples:
+    // 1.0.0-1 -> 1.0.0
+    // 1.0.0-1 -> 1.1.1
+    // 1.0.0-1 -> 2.0.0
+    if (!lowVersion.patch && !lowVersion.minor) {
+      return 'major'
+    }
+
+    // If the main part has no difference
+    if (lowVersion.compareMain(highVersion) === 0) {
+      if (lowVersion.minor && !lowVersion.patch) {
+        return 'minor'
+      }
+      return 'patch'
+    }
+  }
+
+  // add the `pre` prefix if we are going to a prerelease version
+  const prefix = highHasPre ? 'pre' : ''
+
+  if (v1.major !== v2.major) {
+    return prefix + 'major'
+  }
+
+  if (v1.minor !== v2.minor) {
+    return prefix + 'minor'
+  }
+
+  if (v1.patch !== v2.patch) {
+    return prefix + 'patch'
+  }
+
+  // high and low are prereleases
+  return 'prerelease'
+}
+
+module.exports = diff
+
+
+/***/ }),
+
+/***/ 6793:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const compare = __nccwpck_require__(14312)
+const eq = (a, b, loose) => compare(a, b, loose) === 0
+module.exports = eq
+
+
+/***/ }),
+
+/***/ 51636:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const compare = __nccwpck_require__(14312)
+const gt = (a, b, loose) => compare(a, b, loose) > 0
+module.exports = gt
+
+
+/***/ }),
+
+/***/ 9873:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const compare = __nccwpck_require__(14312)
+const gte = (a, b, loose) => compare(a, b, loose) >= 0
+module.exports = gte
+
+
+/***/ }),
+
+/***/ 72055:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SemVer = __nccwpck_require__(52652)
+
+const inc = (version, release, options, identifier, identifierBase) => {
+  if (typeof (options) === 'string') {
+    identifierBase = identifier
+    identifier = options
+    options = undefined
+  }
+
+  try {
+    return new SemVer(
+      version instanceof SemVer ? version.version : version,
+      options
+    ).inc(release, identifier, identifierBase).version
+  } catch (er) {
+    return null
+  }
+}
+module.exports = inc
+
+
+/***/ }),
+
+/***/ 65659:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const compare = __nccwpck_require__(14312)
+const lt = (a, b, loose) => compare(a, b, loose) < 0
+module.exports = lt
+
+
+/***/ }),
+
+/***/ 97096:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const compare = __nccwpck_require__(14312)
+const lte = (a, b, loose) => compare(a, b, loose) <= 0
+module.exports = lte
+
+
+/***/ }),
+
+/***/ 6722:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SemVer = __nccwpck_require__(52652)
+const major = (a, loose) => new SemVer(a, loose).major
+module.exports = major
+
+
+/***/ }),
+
+/***/ 23702:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SemVer = __nccwpck_require__(52652)
+const minor = (a, loose) => new SemVer(a, loose).minor
+module.exports = minor
+
+
+/***/ }),
+
+/***/ 72231:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const compare = __nccwpck_require__(14312)
+const neq = (a, b, loose) => compare(a, b, loose) !== 0
+module.exports = neq
+
+
+/***/ }),
+
+/***/ 99080:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SemVer = __nccwpck_require__(52652)
+const parse = (version, options, throwErrors = false) => {
+  if (version instanceof SemVer) {
+    return version
+  }
+  try {
+    return new SemVer(version, options)
+  } catch (er) {
+    if (!throwErrors) {
+      return null
+    }
+    throw er
+  }
+}
+
+module.exports = parse
+
+
+/***/ }),
+
+/***/ 34149:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SemVer = __nccwpck_require__(52652)
+const patch = (a, loose) => new SemVer(a, loose).patch
+module.exports = patch
+
+
+/***/ }),
+
+/***/ 76921:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const parse = __nccwpck_require__(99080)
+const prerelease = (version, options) => {
+  const parsed = parse(version, options)
+  return (parsed && parsed.prerelease.length) ? parsed.prerelease : null
+}
+module.exports = prerelease
+
+
+/***/ }),
+
+/***/ 33034:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const compare = __nccwpck_require__(14312)
+const rcompare = (a, b, loose) => compare(b, a, loose)
+module.exports = rcompare
+
+
+/***/ }),
+
+/***/ 62301:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const compareBuild = __nccwpck_require__(81445)
+const rsort = (list, loose) => list.sort((a, b) => compareBuild(b, a, loose))
+module.exports = rsort
+
+
+/***/ }),
+
+/***/ 49774:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const Range = __nccwpck_require__(48303)
+const satisfies = (version, range, options) => {
+  try {
+    range = new Range(range, options)
+  } catch (er) {
+    return false
+  }
+  return range.test(version)
+}
+module.exports = satisfies
+
+
+/***/ }),
+
+/***/ 42527:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const compareBuild = __nccwpck_require__(81445)
+const sort = (list, loose) => list.sort((a, b) => compareBuild(a, b, loose))
+module.exports = sort
+
+
+/***/ }),
+
+/***/ 71881:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const parse = __nccwpck_require__(99080)
+const constants = __nccwpck_require__(34578)
+const SemVer = __nccwpck_require__(52652)
+
+const truncate = (version, truncation, options) => {
+  if (!constants.RELEASE_TYPES.includes(truncation)) {
+    return null
+  }
+
+  const clonedVersion = cloneInputVersion(version, options)
+  return clonedVersion && doTruncation(clonedVersion, truncation)
+}
+
+const cloneInputVersion = (version, options) => {
+  const versionStringToParse = (
+    version instanceof SemVer ? version.version : version
+  )
+
+  return parse(versionStringToParse, options)
+}
+
+const doTruncation = (version, truncation) => {
+  if (isPrerelease(truncation)) {
+    return version.version
+  }
+
+  version.prerelease = []
+
+  switch (truncation) {
+    case 'major':
+      version.minor = 0
+      version.patch = 0
+      break
+    case 'minor':
+      version.patch = 0
+      break
+  }
+
+  return version.format()
+}
+
+const isPrerelease = (type) => {
+  return type.startsWith('pre')
+}
+
+module.exports = truncate
+
+
+/***/ }),
+
+/***/ 47681:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const parse = __nccwpck_require__(99080)
+const valid = (version, options) => {
+  const v = parse(version, options)
+  return v ? v.version : null
+}
+module.exports = valid
+
+
+/***/ }),
+
+/***/ 28845:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+// just pre-load all the stuff that index.js lazily exports
+const internalRe = __nccwpck_require__(2190)
+const constants = __nccwpck_require__(34578)
+const SemVer = __nccwpck_require__(52652)
+const identifiers = __nccwpck_require__(57243)
+const parse = __nccwpck_require__(99080)
+const valid = __nccwpck_require__(47681)
+const clean = __nccwpck_require__(76878)
+const inc = __nccwpck_require__(72055)
+const diff = __nccwpck_require__(65472)
+const major = __nccwpck_require__(6722)
+const minor = __nccwpck_require__(23702)
+const patch = __nccwpck_require__(34149)
+const prerelease = __nccwpck_require__(76921)
+const compare = __nccwpck_require__(14312)
+const rcompare = __nccwpck_require__(33034)
+const compareLoose = __nccwpck_require__(75899)
+const compareBuild = __nccwpck_require__(81445)
+const sort = __nccwpck_require__(42527)
+const rsort = __nccwpck_require__(62301)
+const gt = __nccwpck_require__(51636)
+const lt = __nccwpck_require__(65659)
+const eq = __nccwpck_require__(6793)
+const neq = __nccwpck_require__(72231)
+const gte = __nccwpck_require__(9873)
+const lte = __nccwpck_require__(97096)
+const cmp = __nccwpck_require__(92199)
+const coerce = __nccwpck_require__(56258)
+const truncate = __nccwpck_require__(71881)
+const Comparator = __nccwpck_require__(40648)
+const Range = __nccwpck_require__(48303)
+const satisfies = __nccwpck_require__(49774)
+const toComparators = __nccwpck_require__(7911)
+const maxSatisfying = __nccwpck_require__(82804)
+const minSatisfying = __nccwpck_require__(37414)
+const minVersion = __nccwpck_require__(84421)
+const validRange = __nccwpck_require__(37690)
+const outside = __nccwpck_require__(68603)
+const gtr = __nccwpck_require__(51579)
+const ltr = __nccwpck_require__(11862)
+const intersects = __nccwpck_require__(18340)
+const simplifyRange = __nccwpck_require__(88021)
+const subset = __nccwpck_require__(63824)
+module.exports = {
+  parse,
+  valid,
+  clean,
+  inc,
+  diff,
+  major,
+  minor,
+  patch,
+  prerelease,
+  compare,
+  rcompare,
+  compareLoose,
+  compareBuild,
+  sort,
+  rsort,
+  gt,
+  lt,
+  eq,
+  neq,
+  gte,
+  lte,
+  cmp,
+  coerce,
+  truncate,
+  Comparator,
+  Range,
+  satisfies,
+  toComparators,
+  maxSatisfying,
+  minSatisfying,
+  minVersion,
+  validRange,
+  outside,
+  gtr,
+  ltr,
+  intersects,
+  simplifyRange,
+  subset,
+  SemVer,
+  re: internalRe.re,
+  src: internalRe.src,
+  tokens: internalRe.t,
+  SEMVER_SPEC_VERSION: constants.SEMVER_SPEC_VERSION,
+  RELEASE_TYPES: constants.RELEASE_TYPES,
+  compareIdentifiers: identifiers.compareIdentifiers,
+  rcompareIdentifiers: identifiers.rcompareIdentifiers,
+}
+
+
+/***/ }),
+
+/***/ 34578:
+/***/ ((module) => {
+
+"use strict";
+
+
+// Note: this is the semver.org version of the spec that it implements
+// Not necessarily the package version of this code.
+const SEMVER_SPEC_VERSION = '2.0.0'
+
+const MAX_LENGTH = 256
+const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER ||
+/* istanbul ignore next */ 9007199254740991
+
+// Max safe segment length for coercion.
+const MAX_SAFE_COMPONENT_LENGTH = 16
+
+// Max safe length for a build identifier. The max length minus 6 characters for
+// the shortest version with a build 0.0.0+BUILD.
+const MAX_SAFE_BUILD_LENGTH = MAX_LENGTH - 6
+
+const RELEASE_TYPES = [
+  'major',
+  'premajor',
+  'minor',
+  'preminor',
+  'patch',
+  'prepatch',
+  'prerelease',
+]
+
+module.exports = {
+  MAX_LENGTH,
+  MAX_SAFE_COMPONENT_LENGTH,
+  MAX_SAFE_BUILD_LENGTH,
+  MAX_SAFE_INTEGER,
+  RELEASE_TYPES,
+  SEMVER_SPEC_VERSION,
+  FLAG_INCLUDE_PRERELEASE: 0b001,
+  FLAG_LOOSE: 0b010,
+}
+
+
+/***/ }),
+
+/***/ 144:
+/***/ ((module) => {
+
+"use strict";
+
+
+const debug = (
+  typeof process === 'object' &&
+  process.env &&
+  process.env.NODE_DEBUG &&
+  /\bsemver\b/i.test(process.env.NODE_DEBUG)
+) ? (...args) => console.error('SEMVER', ...args)
+  : () => {}
+
+module.exports = debug
+
+
+/***/ }),
+
+/***/ 57243:
+/***/ ((module) => {
+
+"use strict";
+
+
+const numeric = /^[0-9]+$/
+const compareIdentifiers = (a, b) => {
+  if (typeof a === 'number' && typeof b === 'number') {
+    return a === b ? 0 : a < b ? -1 : 1
+  }
+
+  const anum = numeric.test(a)
+  const bnum = numeric.test(b)
+
+  if (anum && bnum) {
+    a = +a
+    b = +b
+  }
+
+  return a === b ? 0
+    : (anum && !bnum) ? -1
+    : (bnum && !anum) ? 1
+    : a < b ? -1
+    : 1
+}
+
+const rcompareIdentifiers = (a, b) => compareIdentifiers(b, a)
+
+module.exports = {
+  compareIdentifiers,
+  rcompareIdentifiers,
+}
+
+
+/***/ }),
+
+/***/ 36610:
+/***/ ((module) => {
+
+"use strict";
+
+
+class LRUCache {
+  constructor () {
+    this.max = 1000
+    this.map = new Map()
+  }
+
+  get (key) {
+    const value = this.map.get(key)
+    if (value === undefined) {
+      return undefined
+    } else {
+      // Remove the key from the map and add it to the end
+      this.map.delete(key)
+      this.map.set(key, value)
+      return value
+    }
+  }
+
+  delete (key) {
+    return this.map.delete(key)
+  }
+
+  set (key, value) {
+    const deleted = this.delete(key)
+
+    if (!deleted && value !== undefined) {
+      // If cache is full, delete the least recently used item
+      if (this.map.size >= this.max) {
+        const firstKey = this.map.keys().next().value
+        this.delete(firstKey)
+      }
+
+      this.map.set(key, value)
+    }
+
+    return this
+  }
+}
+
+module.exports = LRUCache
+
+
+/***/ }),
+
+/***/ 39075:
+/***/ ((module) => {
+
+"use strict";
+
+
+// parse out just the options we care about
+const looseOption = Object.freeze({ loose: true })
+const emptyOpts = Object.freeze({ })
+const parseOptions = options => {
+  if (!options) {
+    return emptyOpts
+  }
+
+  if (typeof options !== 'object') {
+    return looseOption
+  }
+
+  return options
+}
+module.exports = parseOptions
+
+
+/***/ }),
+
+/***/ 2190:
+/***/ ((module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const {
+  MAX_SAFE_COMPONENT_LENGTH,
+  MAX_SAFE_BUILD_LENGTH,
+  MAX_LENGTH,
+} = __nccwpck_require__(34578)
+const debug = __nccwpck_require__(144)
+exports = module.exports = {}
+
+// The actual regexps go on exports.re
+const re = exports.re = []
+const safeRe = exports.safeRe = []
+const src = exports.src = []
+const safeSrc = exports.safeSrc = []
+const t = exports.t = {}
+let R = 0
+
+const LETTERDASHNUMBER = '[a-zA-Z0-9-]'
+
+// Replace some greedy regex tokens to prevent regex dos issues. These regex are
+// used internally via the safeRe object since all inputs in this library get
+// normalized first to trim and collapse all extra whitespace. The original
+// regexes are exported for userland consumption and lower level usage. A
+// future breaking change could export the safer regex only with a note that
+// all input should have extra whitespace removed.
+const safeRegexReplacements = [
+  ['\\s', 1],
+  ['\\d', MAX_LENGTH],
+  [LETTERDASHNUMBER, MAX_SAFE_BUILD_LENGTH],
+]
+
+const makeSafeRegex = (value) => {
+  for (const [token, max] of safeRegexReplacements) {
+    value = value
+      .split(`${token}*`).join(`${token}{0,${max}}`)
+      .split(`${token}+`).join(`${token}{1,${max}}`)
+  }
+  return value
+}
+
+const createToken = (name, value, isGlobal) => {
+  const safe = makeSafeRegex(value)
+  const index = R++
+  debug(name, index, value)
+  t[name] = index
+  src[index] = value
+  safeSrc[index] = safe
+  re[index] = new RegExp(value, isGlobal ? 'g' : undefined)
+  safeRe[index] = new RegExp(safe, isGlobal ? 'g' : undefined)
+}
+
+// The following Regular Expressions can be used for tokenizing,
+// validating, and parsing SemVer version strings.
+
+// ## Numeric Identifier
+// A single `0`, or a non-zero digit followed by zero or more digits.
+
+createToken('NUMERICIDENTIFIER', '0|[1-9]\\d*')
+createToken('NUMERICIDENTIFIERLOOSE', '\\d+')
+
+// ## Non-numeric Identifier
+// Zero or more digits, followed by a letter or hyphen, and then zero or
+// more letters, digits, or hyphens.
+
+createToken('NONNUMERICIDENTIFIER', `\\d*[a-zA-Z-]${LETTERDASHNUMBER}*`)
+
+// ## Main Version
+// Three dot-separated numeric identifiers.
+
+createToken('MAINVERSION', `(${src[t.NUMERICIDENTIFIER]})\\.` +
+                   `(${src[t.NUMERICIDENTIFIER]})\\.` +
+                   `(${src[t.NUMERICIDENTIFIER]})`)
+
+createToken('MAINVERSIONLOOSE', `(${src[t.NUMERICIDENTIFIERLOOSE]})\\.` +
+                        `(${src[t.NUMERICIDENTIFIERLOOSE]})\\.` +
+                        `(${src[t.NUMERICIDENTIFIERLOOSE]})`)
+
+// ## Pre-release Version Identifier
+// A numeric identifier, or a non-numeric identifier.
+// Non-numeric identifiers include numeric identifiers but can be longer.
+// Therefore non-numeric identifiers must go first.
+
+createToken('PRERELEASEIDENTIFIER', `(?:${src[t.NONNUMERICIDENTIFIER]
+}|${src[t.NUMERICIDENTIFIER]})`)
+
+createToken('PRERELEASEIDENTIFIERLOOSE', `(?:${src[t.NONNUMERICIDENTIFIER]
+}|${src[t.NUMERICIDENTIFIERLOOSE]})`)
+
+// ## Pre-release Version
+// Hyphen, followed by one or more dot-separated pre-release version
+// identifiers.
+
+createToken('PRERELEASE', `(?:-(${src[t.PRERELEASEIDENTIFIER]
+}(?:\\.${src[t.PRERELEASEIDENTIFIER]})*))`)
+
+createToken('PRERELEASELOOSE', `(?:-?(${src[t.PRERELEASEIDENTIFIERLOOSE]
+}(?:\\.${src[t.PRERELEASEIDENTIFIERLOOSE]})*))`)
+
+// ## Build Metadata Identifier
+// Any combination of digits, letters, or hyphens.
+
+createToken('BUILDIDENTIFIER', `${LETTERDASHNUMBER}+`)
+
+// ## Build Metadata
+// Plus sign, followed by one or more period-separated build metadata
+// identifiers.
+
+createToken('BUILD', `(?:\\+(${src[t.BUILDIDENTIFIER]
+}(?:\\.${src[t.BUILDIDENTIFIER]})*))`)
+
+// ## Full Version String
+// A main version, followed optionally by a pre-release version and
+// build metadata.
+
+// Note that the only major, minor, patch, and pre-release sections of
+// the version string are capturing groups.  The build metadata is not a
+// capturing group, because it should not ever be used in version
+// comparison.
+
+createToken('FULLPLAIN', `v?${src[t.MAINVERSION]
+}${src[t.PRERELEASE]}?${
+  src[t.BUILD]}?`)
+
+createToken('FULL', `^${src[t.FULLPLAIN]}$`)
+
+// like full, but allows v1.2.3 and =1.2.3, which people do sometimes.
+// also, 1.0.0alpha1 (prerelease without the hyphen) which is pretty
+// common in the npm registry.
+createToken('LOOSEPLAIN', `[v=\\s]*${src[t.MAINVERSIONLOOSE]
+}${src[t.PRERELEASELOOSE]}?${
+  src[t.BUILD]}?`)
+
+createToken('LOOSE', `^${src[t.LOOSEPLAIN]}$`)
+
+createToken('GTLT', '((?:<|>)?=?)')
+
+// Something like "2.*" or "1.2.x".
+// Note that "x.x" is a valid xRange identifier, meaning "any version"
+// Only the first item is strictly required.
+createToken('XRANGEIDENTIFIERLOOSE', `${src[t.NUMERICIDENTIFIERLOOSE]}|x|X|\\*`)
+createToken('XRANGEIDENTIFIER', `${src[t.NUMERICIDENTIFIER]}|x|X|\\*`)
+
+createToken('XRANGEPLAIN', `[v=\\s]*(${src[t.XRANGEIDENTIFIER]})` +
+                   `(?:\\.(${src[t.XRANGEIDENTIFIER]})` +
+                   `(?:\\.(${src[t.XRANGEIDENTIFIER]})` +
+                   `(?:${src[t.PRERELEASE]})?${
+                     src[t.BUILD]}?` +
+                   `)?)?`)
+
+createToken('XRANGEPLAINLOOSE', `[v=\\s]*(${src[t.XRANGEIDENTIFIERLOOSE]})` +
+                        `(?:\\.(${src[t.XRANGEIDENTIFIERLOOSE]})` +
+                        `(?:\\.(${src[t.XRANGEIDENTIFIERLOOSE]})` +
+                        `(?:${src[t.PRERELEASELOOSE]})?${
+                          src[t.BUILD]}?` +
+                        `)?)?`)
+
+createToken('XRANGE', `^${src[t.GTLT]}\\s*${src[t.XRANGEPLAIN]}$`)
+createToken('XRANGELOOSE', `^${src[t.GTLT]}\\s*${src[t.XRANGEPLAINLOOSE]}$`)
+
+// Coercion.
+// Extract anything that could conceivably be a part of a valid semver
+createToken('COERCEPLAIN', `${'(^|[^\\d])' +
+              '(\\d{1,'}${MAX_SAFE_COMPONENT_LENGTH}})` +
+              `(?:\\.(\\d{1,${MAX_SAFE_COMPONENT_LENGTH}}))?` +
+              `(?:\\.(\\d{1,${MAX_SAFE_COMPONENT_LENGTH}}))?`)
+createToken('COERCE', `${src[t.COERCEPLAIN]}(?:$|[^\\d])`)
+createToken('COERCEFULL', src[t.COERCEPLAIN] +
+              `(?:${src[t.PRERELEASE]})?` +
+              `(?:${src[t.BUILD]})?` +
+              `(?:$|[^\\d])`)
+createToken('COERCERTL', src[t.COERCE], true)
+createToken('COERCERTLFULL', src[t.COERCEFULL], true)
+
+// Tilde ranges.
+// Meaning is "reasonably at or greater than"
+createToken('LONETILDE', '(?:~>?)')
+
+createToken('TILDETRIM', `(\\s*)${src[t.LONETILDE]}\\s+`, true)
+exports.tildeTrimReplace = '$1~'
+
+createToken('TILDE', `^${src[t.LONETILDE]}${src[t.XRANGEPLAIN]}$`)
+createToken('TILDELOOSE', `^${src[t.LONETILDE]}${src[t.XRANGEPLAINLOOSE]}$`)
+
+// Caret ranges.
+// Meaning is "at least and backwards compatible with"
+createToken('LONECARET', '(?:\\^)')
+
+createToken('CARETTRIM', `(\\s*)${src[t.LONECARET]}\\s+`, true)
+exports.caretTrimReplace = '$1^'
+
+createToken('CARET', `^${src[t.LONECARET]}${src[t.XRANGEPLAIN]}$`)
+createToken('CARETLOOSE', `^${src[t.LONECARET]}${src[t.XRANGEPLAINLOOSE]}$`)
+
+// A simple gt/lt/eq thing, or just "" to indicate "any version"
+createToken('COMPARATORLOOSE', `^${src[t.GTLT]}\\s*(${src[t.LOOSEPLAIN]})$|^$`)
+createToken('COMPARATOR', `^${src[t.GTLT]}\\s*(${src[t.FULLPLAIN]})$|^$`)
+
+// An expression to strip any whitespace between the gtlt and the thing
+// it modifies, so that `> 1.2.3` ==> `>1.2.3`
+createToken('COMPARATORTRIM', `(\\s*)${src[t.GTLT]
+}\\s*(${src[t.LOOSEPLAIN]}|${src[t.XRANGEPLAIN]})`, true)
+exports.comparatorTrimReplace = '$1$2$3'
+
+// Something like `1.2.3 - 1.2.4`
+// Note that these all use the loose form, because they'll be
+// checked against either the strict or loose comparator form
+// later.
+createToken('HYPHENRANGE', `^\\s*(${src[t.XRANGEPLAIN]})` +
+                   `\\s+-\\s+` +
+                   `(${src[t.XRANGEPLAIN]})` +
+                   `\\s*$`)
+
+createToken('HYPHENRANGELOOSE', `^\\s*(${src[t.XRANGEPLAINLOOSE]})` +
+                        `\\s+-\\s+` +
+                        `(${src[t.XRANGEPLAINLOOSE]})` +
+                        `\\s*$`)
+
+// Star ranges basically just allow anything at all.
+createToken('STAR', '(<|>)?=?\\s*\\*')
+// >=0.0.0 is like a star
+createToken('GTE0', '^\\s*>=\\s*0\\.0\\.0\\s*$')
+createToken('GTE0PRE', '^\\s*>=\\s*0\\.0\\.0-0\\s*$')
+
+
+/***/ }),
+
+/***/ 51579:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+// Determine if version is greater than all the versions possible in the range.
+const outside = __nccwpck_require__(68603)
+const gtr = (version, range, options) => outside(version, range, '>', options)
+module.exports = gtr
+
+
+/***/ }),
+
+/***/ 18340:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const Range = __nccwpck_require__(48303)
+const intersects = (r1, r2, options) => {
+  r1 = new Range(r1, options)
+  r2 = new Range(r2, options)
+  return r1.intersects(r2, options)
+}
+module.exports = intersects
+
+
+/***/ }),
+
+/***/ 11862:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const outside = __nccwpck_require__(68603)
+// Determine if version is less than all the versions possible in the range
+const ltr = (version, range, options) => outside(version, range, '<', options)
+module.exports = ltr
+
+
+/***/ }),
+
+/***/ 82804:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SemVer = __nccwpck_require__(52652)
+const Range = __nccwpck_require__(48303)
+
+const maxSatisfying = (versions, range, options) => {
+  let max = null
+  let maxSV = null
+  let rangeObj = null
+  try {
+    rangeObj = new Range(range, options)
+  } catch (er) {
+    return null
+  }
+  versions.forEach((v) => {
+    if (rangeObj.test(v)) {
+      // satisfies(v, range, options)
+      if (!max || maxSV.compare(v) === -1) {
+        // compare(max, v, true)
+        max = v
+        maxSV = new SemVer(max, options)
+      }
+    }
+  })
+  return max
+}
+module.exports = maxSatisfying
+
+
+/***/ }),
+
+/***/ 37414:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SemVer = __nccwpck_require__(52652)
+const Range = __nccwpck_require__(48303)
+const minSatisfying = (versions, range, options) => {
+  let min = null
+  let minSV = null
+  let rangeObj = null
+  try {
+    rangeObj = new Range(range, options)
+  } catch (er) {
+    return null
+  }
+  versions.forEach((v) => {
+    if (rangeObj.test(v)) {
+      // satisfies(v, range, options)
+      if (!min || minSV.compare(v) === 1) {
+        // compare(min, v, true)
+        min = v
+        minSV = new SemVer(min, options)
+      }
+    }
+  })
+  return min
+}
+module.exports = minSatisfying
+
+
+/***/ }),
+
+/***/ 84421:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SemVer = __nccwpck_require__(52652)
+const Range = __nccwpck_require__(48303)
+const gt = __nccwpck_require__(51636)
+
+const minVersion = (range, loose) => {
+  range = new Range(range, loose)
+
+  let minver = new SemVer('0.0.0')
+  if (range.test(minver)) {
+    return minver
+  }
+
+  minver = new SemVer('0.0.0-0')
+  if (range.test(minver)) {
+    return minver
+  }
+
+  minver = null
+  for (let i = 0; i < range.set.length; ++i) {
+    const comparators = range.set[i]
+
+    let setMin = null
+    comparators.forEach((comparator) => {
+      // Clone to avoid manipulating the comparator's semver object.
+      const compver = new SemVer(comparator.semver.version)
+      switch (comparator.operator) {
+        case '>':
+          if (compver.prerelease.length === 0) {
+            compver.patch++
+          } else {
+            compver.prerelease.push(0)
+          }
+          compver.raw = compver.format()
+          /* fallthrough */
+        case '':
+        case '>=':
+          if (!setMin || gt(compver, setMin)) {
+            setMin = compver
+          }
+          break
+        case '<':
+        case '<=':
+          /* Ignore maximum versions */
+          break
+        /* istanbul ignore next */
+        default:
+          throw new Error(`Unexpected operation: ${comparator.operator}`)
+      }
+    })
+    if (setMin && (!minver || gt(minver, setMin))) {
+      minver = setMin
+    }
+  }
+
+  if (minver && range.test(minver)) {
+    return minver
+  }
+
+  return null
+}
+module.exports = minVersion
+
+
+/***/ }),
+
+/***/ 68603:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const SemVer = __nccwpck_require__(52652)
+const Comparator = __nccwpck_require__(40648)
+const { ANY } = Comparator
+const Range = __nccwpck_require__(48303)
+const satisfies = __nccwpck_require__(49774)
+const gt = __nccwpck_require__(51636)
+const lt = __nccwpck_require__(65659)
+const lte = __nccwpck_require__(97096)
+const gte = __nccwpck_require__(9873)
+
+const outside = (version, range, hilo, options) => {
+  version = new SemVer(version, options)
+  range = new Range(range, options)
+
+  let gtfn, ltefn, ltfn, comp, ecomp
+  switch (hilo) {
+    case '>':
+      gtfn = gt
+      ltefn = lte
+      ltfn = lt
+      comp = '>'
+      ecomp = '>='
+      break
+    case '<':
+      gtfn = lt
+      ltefn = gte
+      ltfn = gt
+      comp = '<'
+      ecomp = '<='
+      break
+    default:
+      throw new TypeError('Must provide a hilo val of "<" or ">"')
+  }
+
+  // If it satisfies the range it is not outside
+  if (satisfies(version, range, options)) {
+    return false
+  }
+
+  // From now on, variable terms are as if we're in "gtr" mode.
+  // but note that everything is flipped for the "ltr" function.
+
+  for (let i = 0; i < range.set.length; ++i) {
+    const comparators = range.set[i]
+
+    let high = null
+    let low = null
+
+    comparators.forEach((comparator) => {
+      if (comparator.semver === ANY) {
+        comparator = new Comparator('>=0.0.0')
+      }
+      high = high || comparator
+      low = low || comparator
+      if (gtfn(comparator.semver, high.semver, options)) {
+        high = comparator
+      } else if (ltfn(comparator.semver, low.semver, options)) {
+        low = comparator
+      }
+    })
+
+    // If the edge version comparator has a operator then our version
+    // isn't outside it
+    if (high.operator === comp || high.operator === ecomp) {
+      return false
+    }
+
+    // If the lowest version comparator has an operator and our version
+    // is less than it then it isn't higher than the range
+    if ((!low.operator || low.operator === comp) &&
+        ltefn(version, low.semver)) {
+      return false
+    } else if (low.operator === ecomp && ltfn(version, low.semver)) {
+      return false
+    }
+  }
+  return true
+}
+
+module.exports = outside
+
+
+/***/ }),
+
+/***/ 88021:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+// given a set of versions and a range, create a "simplified" range
+// that includes the same versions that the original range does
+// If the original range is shorter than the simplified one, return that.
+const satisfies = __nccwpck_require__(49774)
+const compare = __nccwpck_require__(14312)
+module.exports = (versions, range, options) => {
+  const set = []
+  let first = null
+  let prev = null
+  const v = versions.sort((a, b) => compare(a, b, options))
+  for (const version of v) {
+    const included = satisfies(version, range, options)
+    if (included) {
+      prev = version
+      if (!first) {
+        first = version
+      }
+    } else {
+      if (prev) {
+        set.push([first, prev])
+      }
+      prev = null
+      first = null
+    }
+  }
+  if (first) {
+    set.push([first, null])
+  }
+
+  const ranges = []
+  for (const [min, max] of set) {
+    if (min === max) {
+      ranges.push(min)
+    } else if (!max && min === v[0]) {
+      ranges.push('*')
+    } else if (!max) {
+      ranges.push(`>=${min}`)
+    } else if (min === v[0]) {
+      ranges.push(`<=${max}`)
+    } else {
+      ranges.push(`${min} - ${max}`)
+    }
+  }
+  const simplified = ranges.join(' || ')
+  const original = typeof range.raw === 'string' ? range.raw : String(range)
+  return simplified.length < original.length ? simplified : range
+}
+
+
+/***/ }),
+
+/***/ 63824:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const Range = __nccwpck_require__(48303)
+const Comparator = __nccwpck_require__(40648)
+const { ANY } = Comparator
+const satisfies = __nccwpck_require__(49774)
+const compare = __nccwpck_require__(14312)
+
+// Complex range `r1 || r2 || ...` is a subset of `R1 || R2 || ...` iff:
+// - Every simple range `r1, r2, ...` is a null set, OR
+// - Every simple range `r1, r2, ...` which is not a null set is a subset of
+//   some `R1, R2, ...`
+//
+// Simple range `c1 c2 ...` is a subset of simple range `C1 C2 ...` iff:
+// - If c is only the ANY comparator
+//   - If C is only the ANY comparator, return true
+//   - Else if in prerelease mode, return false
+//   - else replace c with `[>=0.0.0]`
+// - If C is only the ANY comparator
+//   - if in prerelease mode, return true
+//   - else replace C with `[>=0.0.0]`
+// - Let EQ be the set of = comparators in c
+// - If EQ is more than one, return true (null set)
+// - Let GT be the highest > or >= comparator in c
+// - Let LT be the lowest < or <= comparator in c
+// - If GT and LT, and GT.semver > LT.semver, return true (null set)
+// - If any C is a = range, and GT or LT are set, return false
+// - If EQ
+//   - If GT, and EQ does not satisfy GT, return true (null set)
+//   - If LT, and EQ does not satisfy LT, return true (null set)
+//   - If EQ satisfies every C, return true
+//   - Else return false
+// - If GT
+//   - If GT.semver is lower than any > or >= comp in C, return false
+//   - If GT is >=, and GT.semver does not satisfy every C, return false
+//   - If GT.semver has a prerelease, and not in prerelease mode
+//     - If no C has a prerelease and the GT.semver tuple, return false
+// - If LT
+//   - If LT.semver is greater than any < or <= comp in C, return false
+//   - If LT is <=, and LT.semver does not satisfy every C, return false
+//   - If LT.semver has a prerelease, and not in prerelease mode
+//     - If no C has a prerelease and the LT.semver tuple, return false
+// - Else return true
+
+const subset = (sub, dom, options = {}) => {
+  if (sub === dom) {
+    return true
+  }
+
+  sub = new Range(sub, options)
+  dom = new Range(dom, options)
+  let sawNonNull = false
+
+  OUTER: for (const simpleSub of sub.set) {
+    for (const simpleDom of dom.set) {
+      const isSub = simpleSubset(simpleSub, simpleDom, options)
+      sawNonNull = sawNonNull || isSub !== null
+      if (isSub) {
+        continue OUTER
+      }
+    }
+    // the null set is a subset of everything, but null simple ranges in
+    // a complex range should be ignored.  so if we saw a non-null range,
+    // then we know this isn't a subset, but if EVERY simple range was null,
+    // then it is a subset.
+    if (sawNonNull) {
+      return false
+    }
+  }
+  return true
+}
+
+const minimumVersionWithPreRelease = [new Comparator('>=0.0.0-0')]
+const minimumVersion = [new Comparator('>=0.0.0')]
+
+const simpleSubset = (sub, dom, options) => {
+  if (sub === dom) {
+    return true
+  }
+
+  if (sub.length === 1 && sub[0].semver === ANY) {
+    if (dom.length === 1 && dom[0].semver === ANY) {
+      return true
+    } else if (options.includePrerelease) {
+      sub = minimumVersionWithPreRelease
+    } else {
+      sub = minimumVersion
+    }
+  }
+
+  if (dom.length === 1 && dom[0].semver === ANY) {
+    if (options.includePrerelease) {
+      return true
+    } else {
+      dom = minimumVersion
+    }
+  }
+
+  const eqSet = new Set()
+  let gt, lt
+  for (const c of sub) {
+    if (c.operator === '>' || c.operator === '>=') {
+      gt = higherGT(gt, c, options)
+    } else if (c.operator === '<' || c.operator === '<=') {
+      lt = lowerLT(lt, c, options)
+    } else {
+      eqSet.add(c.semver)
+    }
+  }
+
+  if (eqSet.size > 1) {
+    return null
+  }
+
+  let gtltComp
+  if (gt && lt) {
+    gtltComp = compare(gt.semver, lt.semver, options)
+    if (gtltComp > 0) {
+      return null
+    } else if (gtltComp === 0 && (gt.operator !== '>=' || lt.operator !== '<=')) {
+      return null
+    }
+  }
+
+  // will iterate one or zero times
+  for (const eq of eqSet) {
+    if (gt && !satisfies(eq, String(gt), options)) {
+      return null
+    }
+
+    if (lt && !satisfies(eq, String(lt), options)) {
+      return null
+    }
+
+    for (const c of dom) {
+      if (!satisfies(eq, String(c), options)) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  let higher, lower
+  let hasDomLT, hasDomGT
+  // if the subset has a prerelease, we need a comparator in the superset
+  // with the same tuple and a prerelease, or it's not a subset
+  let needDomLTPre = lt &&
+    !options.includePrerelease &&
+    lt.semver.prerelease.length ? lt.semver : false
+  let needDomGTPre = gt &&
+    !options.includePrerelease &&
+    gt.semver.prerelease.length ? gt.semver : false
+  // exception: <1.2.3-0 is the same as <1.2.3
+  if (needDomLTPre && needDomLTPre.prerelease.length === 1 &&
+      lt.operator === '<' && needDomLTPre.prerelease[0] === 0) {
+    needDomLTPre = false
+  }
+
+  for (const c of dom) {
+    hasDomGT = hasDomGT || c.operator === '>' || c.operator === '>='
+    hasDomLT = hasDomLT || c.operator === '<' || c.operator === '<='
+    if (gt) {
+      if (needDomGTPre) {
+        if (c.semver.prerelease && c.semver.prerelease.length &&
+            c.semver.major === needDomGTPre.major &&
+            c.semver.minor === needDomGTPre.minor &&
+            c.semver.patch === needDomGTPre.patch) {
+          needDomGTPre = false
+        }
+      }
+      if (c.operator === '>' || c.operator === '>=') {
+        higher = higherGT(gt, c, options)
+        if (higher === c && higher !== gt) {
+          return false
+        }
+      } else if (gt.operator === '>=' && !c.test(gt.semver)) {
+        return false
+      }
+    }
+    if (lt) {
+      if (needDomLTPre) {
+        if (c.semver.prerelease && c.semver.prerelease.length &&
+            c.semver.major === needDomLTPre.major &&
+            c.semver.minor === needDomLTPre.minor &&
+            c.semver.patch === needDomLTPre.patch) {
+          needDomLTPre = false
+        }
+      }
+      if (c.operator === '<' || c.operator === '<=') {
+        lower = lowerLT(lt, c, options)
+        if (lower === c && lower !== lt) {
+          return false
+        }
+      } else if (lt.operator === '<=' && !c.test(lt.semver)) {
+        return false
+      }
+    }
+    if (!c.operator && (lt || gt) && gtltComp !== 0) {
+      return false
+    }
+  }
+
+  // if there was a < or >, and nothing in the dom, then must be false
+  // UNLESS it was limited by another range in the other direction.
+  // Eg, >1.0.0 <1.0.1 is still a subset of <2.0.0
+  if (gt && hasDomLT && !lt && gtltComp !== 0) {
+    return false
+  }
+
+  if (lt && hasDomGT && !gt && gtltComp !== 0) {
+    return false
+  }
+
+  // we needed a prerelease range in a specific tuple, but didn't get one
+  // then this isn't a subset.  eg >=1.2.3-pre is not a subset of >=1.0.0,
+  // because it includes prereleases in the 1.2.3 tuple
+  if (needDomGTPre || needDomLTPre) {
+    return false
+  }
+
+  return true
+}
+
+// >=1.2.3 is lower than >1.2.3
+const higherGT = (a, b, options) => {
+  if (!a) {
+    return b
+  }
+  const comp = compare(a.semver, b.semver, options)
+  return comp > 0 ? a
+    : comp < 0 ? b
+    : b.operator === '>' && a.operator === '>=' ? b
+    : a
+}
+
+// <=1.2.3 is higher than <1.2.3
+const lowerLT = (a, b, options) => {
+  if (!a) {
+    return b
+  }
+  const comp = compare(a.semver, b.semver, options)
+  return comp < 0 ? a
+    : comp > 0 ? b
+    : b.operator === '<' && a.operator === '<=' ? b
+    : a
+}
+
+module.exports = subset
+
+
+/***/ }),
+
+/***/ 7911:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const Range = __nccwpck_require__(48303)
+
+// Mostly just for testing and legacy API reasons
+const toComparators = (range, options) =>
+  new Range(range, options).set
+    .map(comp => comp.map(c => c.value).join(' ').trim().split(' '))
+
+module.exports = toComparators
+
+
+/***/ }),
+
+/***/ 37690:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const Range = __nccwpck_require__(48303)
+const validRange = (range, options) => {
+  try {
+    // Return '*' instead of '' so that truthiness works.
+    // This will throw if it's invalid anyway
+    return new Range(range, options).range || '*'
+  } catch (er) {
+    return null
+  }
+}
+module.exports = validRange
+
 
 /***/ }),
 
@@ -65789,24 +66822,24 @@ var Inputs;
     Inputs["AWSEndpoint"] = "aws-endpoint";
     Inputs["AWSS3BucketEndpoint"] = "aws-s3-bucket-endpoint";
     Inputs["AWSS3ForcePathStyle"] = "aws-s3-force-path-style";
-})(Inputs = exports.Inputs || (exports.Inputs = {}));
+})(Inputs || (exports.Inputs = Inputs = {}));
 var Outputs;
 (function (Outputs) {
     Outputs["CacheHit"] = "cache-hit";
     Outputs["CachePrimaryKey"] = "cache-primary-key";
     Outputs["CacheMatchedKey"] = "cache-matched-key"; // Output from restore action
-})(Outputs = exports.Outputs || (exports.Outputs = {}));
+})(Outputs || (exports.Outputs = Outputs = {}));
 var State;
 (function (State) {
     State["CachePrimaryKey"] = "CACHE_KEY";
     State["CacheMatchedKey"] = "CACHE_RESULT";
-})(State = exports.State || (exports.State = {}));
+})(State || (exports.State = State = {}));
 var Events;
 (function (Events) {
     Events["Key"] = "GITHUB_EVENT_NAME";
     Events["Push"] = "push";
     Events["PullRequest"] = "pull_request";
-})(Events = exports.Events || (exports.Events = {}));
+})(Events || (exports.Events = Events = {}));
 exports.RefKey = "GITHUB_REF";
 
 
@@ -65817,25 +66850,14 @@ exports.RefKey = "GITHUB_REF";
 
 "use strict";
 
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const saveImpl_1 = __importDefault(__nccwpck_require__(20056));
 const stateProvider_1 = __nccwpck_require__(52879);
-function run() {
-    return __awaiter(this, void 0, void 0, function* () {
-        yield (0, saveImpl_1.default)(new stateProvider_1.StateProvider());
-    });
+async function run() {
+    await (0, saveImpl_1.default)(new stateProvider_1.StateProvider());
 }
 run();
 exports["default"] = run;
@@ -65864,22 +66886,23 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const cache = __importStar(__nccwpck_require__(11411));
 const core = __importStar(__nccwpck_require__(37484));
@@ -65889,48 +66912,46 @@ const utils = __importStar(__nccwpck_require__(8270));
 // @actions/toolkit when a failed upload closes the file descriptor causing any in-process reads to
 // throw an uncaught exception.  Instead of failing this action, just warn.
 process.on("uncaughtException", e => utils.logWarning(e.message));
-function saveImpl(stateProvider) {
-    return __awaiter(this, void 0, void 0, function* () {
-        let cacheId = -1;
-        try {
-            if (!utils.isCacheFeatureAvailable()) {
-                return;
-            }
-            if (!utils.isValidEvent()) {
-                utils.logWarning(`Event Validation Error: The event type ${process.env[constants_1.Events.Key]} is not supported because it's not tied to a branch or tag ref.`);
-                return;
-            }
-            // If restore has stored a primary key in state, reuse that
-            // Else re-evaluate from inputs
-            const primaryKey = stateProvider.getState(constants_1.State.CachePrimaryKey) ||
-                core.getInput(constants_1.Inputs.Key);
-            if (!primaryKey) {
-                utils.logWarning(`Key is not specified.`);
-                return;
-            }
-            // If matched restore key is same as primary key, then do not save cache
-            // NO-OP in case of SaveOnly action
-            const restoredKey = stateProvider.getCacheState();
-            if (utils.isExactKeyMatch(primaryKey, restoredKey)) {
-                core.info(`Cache hit occurred on the primary key ${primaryKey}, not saving cache.`);
-                return;
-            }
-            const cachePaths = utils.getInputAsArray(constants_1.Inputs.Path, {
-                required: true
-            });
-            const s3BucketName = core.getInput(constants_1.Inputs.AWSS3Bucket);
-            const s3config = utils.getInputS3ClientConfig();
-            const enableCrossOsArchive = utils.getInputAsBool(constants_1.Inputs.EnableCrossOsArchive);
-            cacheId = yield cache.saveCache(cachePaths.slice(), primaryKey, { uploadChunkSize: utils.getInputAsInt(constants_1.Inputs.UploadChunkSize) }, enableCrossOsArchive, s3config, s3BucketName);
-            if (cacheId != -1) {
-                core.info(`Cache saved with key: ${primaryKey}`);
-            }
+async function saveImpl(stateProvider) {
+    let cacheId = -1;
+    try {
+        if (!utils.isCacheFeatureAvailable()) {
+            return;
         }
-        catch (error) {
-            utils.logWarning(error.message);
+        if (!utils.isValidEvent()) {
+            utils.logWarning(`Event Validation Error: The event type ${process.env[constants_1.Events.Key]} is not supported because it's not tied to a branch or tag ref.`);
+            return;
         }
-        return cacheId;
-    });
+        // If restore has stored a primary key in state, reuse that
+        // Else re-evaluate from inputs
+        const primaryKey = stateProvider.getState(constants_1.State.CachePrimaryKey) ||
+            core.getInput(constants_1.Inputs.Key);
+        if (!primaryKey) {
+            utils.logWarning(`Key is not specified.`);
+            return;
+        }
+        // If matched restore key is same as primary key, then do not save cache
+        // NO-OP in case of SaveOnly action
+        const restoredKey = stateProvider.getCacheState();
+        if (utils.isExactKeyMatch(primaryKey, restoredKey)) {
+            core.info(`Cache hit occurred on the primary key ${primaryKey}, not saving cache.`);
+            return;
+        }
+        const cachePaths = utils.getInputAsArray(constants_1.Inputs.Path, {
+            required: true
+        });
+        const s3BucketName = core.getInput(constants_1.Inputs.AWSS3Bucket);
+        const s3config = utils.getInputS3ClientConfig();
+        const enableCrossOsArchive = utils.getInputAsBool(constants_1.Inputs.EnableCrossOsArchive);
+        cacheId = await cache.saveCache(cachePaths.slice(), primaryKey, { uploadChunkSize: utils.getInputAsInt(constants_1.Inputs.UploadChunkSize) }, enableCrossOsArchive, s3config, s3BucketName);
+        if (cacheId != -1) {
+            core.info(`Cache saved with key: ${primaryKey}`);
+        }
+    }
+    catch (error) {
+        utils.logWarning(error.message);
+    }
+    return cacheId;
 }
 exports["default"] = saveImpl;
 
@@ -65958,24 +66979,28 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.NullStateProvider = exports.StateProvider = void 0;
 const core = __importStar(__nccwpck_require__(37484));
 const constants_1 = __nccwpck_require__(27242);
 class StateProviderBase {
-    constructor() {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
-        this.setState = (key, value) => { };
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        this.getState = (key) => "";
-    }
     getCacheState() {
         const cacheKey = this.getState(constants_1.State.CacheMatchedKey);
         if (cacheKey) {
@@ -65984,28 +67009,26 @@ class StateProviderBase {
         }
         return undefined;
     }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    setState = (key, value) => { };
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    getState = (key) => "";
 }
 class StateProvider extends StateProviderBase {
-    constructor() {
-        super(...arguments);
-        this.setState = core.saveState;
-        this.getState = core.getState;
-    }
+    setState = core.saveState;
+    getState = core.getState;
 }
 exports.StateProvider = StateProvider;
 class NullStateProvider extends StateProviderBase {
-    constructor() {
-        super(...arguments);
-        this.stateToOutputMap = new Map([
-            [constants_1.State.CacheMatchedKey, constants_1.Outputs.CacheMatchedKey],
-            [constants_1.State.CachePrimaryKey, constants_1.Outputs.CachePrimaryKey]
-        ]);
-        this.setState = (key, value) => {
-            core.setOutput(this.stateToOutputMap.get(key), value);
-        };
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        this.getState = (key) => "";
-    }
+    stateToOutputMap = new Map([
+        [constants_1.State.CacheMatchedKey, constants_1.Outputs.CacheMatchedKey],
+        [constants_1.State.CachePrimaryKey, constants_1.Outputs.CachePrimaryKey]
+    ]);
+    setState = (key, value) => {
+        core.setOutput(this.stateToOutputMap.get(key), value);
+    };
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    getState = (key) => "";
 }
 exports.NullStateProvider = NullStateProvider;
 
@@ -66033,15 +67056,33 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getInputS3ClientConfig = exports.isCacheFeatureAvailable = exports.getInputAsBool = exports.getInputAsInt = exports.getInputAsArray = exports.isValidEvent = exports.logWarning = exports.isExactKeyMatch = exports.isGhes = void 0;
+exports.isGhes = isGhes;
+exports.isExactKeyMatch = isExactKeyMatch;
+exports.logWarning = logWarning;
+exports.isValidEvent = isValidEvent;
+exports.getInputAsArray = getInputAsArray;
+exports.getInputAsInt = getInputAsInt;
+exports.getInputAsBool = getInputAsBool;
+exports.isCacheFeatureAvailable = isCacheFeatureAvailable;
+exports.getInputS3ClientConfig = getInputS3ClientConfig;
 const cache = __importStar(__nccwpck_require__(11411));
 const core = __importStar(__nccwpck_require__(37484));
 const constants_1 = __nccwpck_require__(27242);
@@ -66049,25 +67090,21 @@ function isGhes() {
     const ghUrl = new URL(process.env["GITHUB_SERVER_URL"] || "https://github.com");
     return ghUrl.hostname.toUpperCase() !== "GITHUB.COM";
 }
-exports.isGhes = isGhes;
 function isExactKeyMatch(key, cacheKey) {
     return !!(cacheKey &&
         cacheKey.localeCompare(key, undefined, {
             sensitivity: "accent"
         }) === 0);
 }
-exports.isExactKeyMatch = isExactKeyMatch;
 function logWarning(message) {
     const warningPrefix = "[warning]";
     core.info(`${warningPrefix}${message}`);
 }
-exports.logWarning = logWarning;
 // Cache token authorized for all events that are tied to a ref
 // See GitHub Context https://help.github.com/actions/automating-your-workflow-with-github-actions/contexts-and-expression-syntax-for-github-actions#github-context
 function isValidEvent() {
     return constants_1.RefKey in process.env && Boolean(process.env[constants_1.RefKey]);
 }
-exports.isValidEvent = isValidEvent;
 function getInputAsArray(name, options) {
     return core
         .getInput(name, options)
@@ -66075,7 +67112,6 @@ function getInputAsArray(name, options) {
         .map(s => s.replace(/^!\s+/, "!").trim())
         .filter(x => x !== "");
 }
-exports.getInputAsArray = getInputAsArray;
 function getInputAsInt(name, options) {
     const value = parseInt(core.getInput(name, options));
     if (isNaN(value) || value < 0) {
@@ -66083,12 +67119,10 @@ function getInputAsInt(name, options) {
     }
     return value;
 }
-exports.getInputAsInt = getInputAsInt;
 function getInputAsBool(name, options) {
     const result = core.getInput(name, options);
     return result.toLowerCase() === "true";
 }
-exports.getInputAsBool = getInputAsBool;
 function isCacheFeatureAvailable() {
     if (cache.isFeatureAvailable()) {
         return true;
@@ -66101,7 +67135,6 @@ Otherwise please upgrade to GHES version >= 3.5 and If you are also using Github
     logWarning("An internal error has occurred in cache backend. Please check https://www.githubstatus.com/ for any ongoing issue in actions.");
     return false;
 }
-exports.isCacheFeatureAvailable = isCacheFeatureAvailable;
 function getInputS3ClientConfig() {
     const s3BucketName = core.getInput(constants_1.Inputs.AWSS3Bucket);
     if (!s3BucketName) {
@@ -66124,7 +67157,6 @@ function getInputS3ClientConfig() {
     core.debug("Enable S3 backend mode.");
     return s3config;
 }
-exports.getInputS3ClientConfig = getInputS3ClientConfig;
 
 
 /***/ }),
@@ -107391,629 +108423,6 @@ function randomUUID() {
 // Annotate the CommonJS export names for ESM import in node:
 0 && (0);
 //# sourceMappingURL=uuidUtils.js.map
-
-
-/***/ }),
-
-/***/ 31914:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.version = exports.validate = exports.v7 = exports.v6ToV1 = exports.v6 = exports.v5 = exports.v4 = exports.v3 = exports.v1ToV6 = exports.v1 = exports.stringify = exports.parse = exports.NIL = exports.MAX = void 0;
-var max_js_1 = __nccwpck_require__(41576);
-Object.defineProperty(exports, "MAX", ({ enumerable: true, get: function () { return max_js_1.default; } }));
-var nil_js_1 = __nccwpck_require__(80805);
-Object.defineProperty(exports, "NIL", ({ enumerable: true, get: function () { return nil_js_1.default; } }));
-var parse_js_1 = __nccwpck_require__(22713);
-Object.defineProperty(exports, "parse", ({ enumerable: true, get: function () { return parse_js_1.default; } }));
-var stringify_js_1 = __nccwpck_require__(29687);
-Object.defineProperty(exports, "stringify", ({ enumerable: true, get: function () { return stringify_js_1.default; } }));
-var v1_js_1 = __nccwpck_require__(65597);
-Object.defineProperty(exports, "v1", ({ enumerable: true, get: function () { return v1_js_1.default; } }));
-var v1ToV6_js_1 = __nccwpck_require__(31092);
-Object.defineProperty(exports, "v1ToV6", ({ enumerable: true, get: function () { return v1ToV6_js_1.default; } }));
-var v3_js_1 = __nccwpck_require__(1691);
-Object.defineProperty(exports, "v3", ({ enumerable: true, get: function () { return v3_js_1.default; } }));
-var v4_js_1 = __nccwpck_require__(54834);
-Object.defineProperty(exports, "v4", ({ enumerable: true, get: function () { return v4_js_1.default; } }));
-var v5_js_1 = __nccwpck_require__(22465);
-Object.defineProperty(exports, "v5", ({ enumerable: true, get: function () { return v5_js_1.default; } }));
-var v6_js_1 = __nccwpck_require__(69544);
-Object.defineProperty(exports, "v6", ({ enumerable: true, get: function () { return v6_js_1.default; } }));
-var v6ToV1_js_1 = __nccwpck_require__(82104);
-Object.defineProperty(exports, "v6ToV1", ({ enumerable: true, get: function () { return v6ToV1_js_1.default; } }));
-var v7_js_1 = __nccwpck_require__(61631);
-Object.defineProperty(exports, "v7", ({ enumerable: true, get: function () { return v7_js_1.default; } }));
-var validate_js_1 = __nccwpck_require__(25182);
-Object.defineProperty(exports, "validate", ({ enumerable: true, get: function () { return validate_js_1.default; } }));
-var version_js_1 = __nccwpck_require__(90302);
-Object.defineProperty(exports, "version", ({ enumerable: true, get: function () { return version_js_1.default; } }));
-
-
-/***/ }),
-
-/***/ 41576:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports["default"] = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
-
-
-/***/ }),
-
-/***/ 86934:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const crypto_1 = __nccwpck_require__(76982);
-function md5(bytes) {
-    if (Array.isArray(bytes)) {
-        bytes = Buffer.from(bytes);
-    }
-    else if (typeof bytes === 'string') {
-        bytes = Buffer.from(bytes, 'utf8');
-    }
-    return (0, crypto_1.createHash)('md5').update(bytes).digest();
-}
-exports["default"] = md5;
-
-
-/***/ }),
-
-/***/ 55831:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const crypto_1 = __nccwpck_require__(76982);
-exports["default"] = { randomUUID: crypto_1.randomUUID };
-
-
-/***/ }),
-
-/***/ 80805:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports["default"] = '00000000-0000-0000-0000-000000000000';
-
-
-/***/ }),
-
-/***/ 22713:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const validate_js_1 = __nccwpck_require__(25182);
-function parse(uuid) {
-    if (!(0, validate_js_1.default)(uuid)) {
-        throw TypeError('Invalid UUID');
-    }
-    let v;
-    return Uint8Array.of((v = parseInt(uuid.slice(0, 8), 16)) >>> 24, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff, (v = parseInt(uuid.slice(9, 13), 16)) >>> 8, v & 0xff, (v = parseInt(uuid.slice(14, 18), 16)) >>> 8, v & 0xff, (v = parseInt(uuid.slice(19, 23), 16)) >>> 8, v & 0xff, ((v = parseInt(uuid.slice(24, 36), 16)) / 0x10000000000) & 0xff, (v / 0x100000000) & 0xff, (v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff);
-}
-exports["default"] = parse;
-
-
-/***/ }),
-
-/***/ 89997:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports["default"] = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
-
-
-/***/ }),
-
-/***/ 45983:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const crypto_1 = __nccwpck_require__(76982);
-const rnds8Pool = new Uint8Array(256);
-let poolPtr = rnds8Pool.length;
-function rng() {
-    if (poolPtr > rnds8Pool.length - 16) {
-        (0, crypto_1.randomFillSync)(rnds8Pool);
-        poolPtr = 0;
-    }
-    return rnds8Pool.slice(poolPtr, (poolPtr += 16));
-}
-exports["default"] = rng;
-
-
-/***/ }),
-
-/***/ 72449:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const crypto_1 = __nccwpck_require__(76982);
-function sha1(bytes) {
-    if (Array.isArray(bytes)) {
-        bytes = Buffer.from(bytes);
-    }
-    else if (typeof bytes === 'string') {
-        bytes = Buffer.from(bytes, 'utf8');
-    }
-    return (0, crypto_1.createHash)('sha1').update(bytes).digest();
-}
-exports["default"] = sha1;
-
-
-/***/ }),
-
-/***/ 29687:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.unsafeStringify = void 0;
-const validate_js_1 = __nccwpck_require__(25182);
-const byteToHex = [];
-for (let i = 0; i < 256; ++i) {
-    byteToHex.push((i + 0x100).toString(16).slice(1));
-}
-function unsafeStringify(arr, offset = 0) {
-    return (byteToHex[arr[offset + 0]] +
-        byteToHex[arr[offset + 1]] +
-        byteToHex[arr[offset + 2]] +
-        byteToHex[arr[offset + 3]] +
-        '-' +
-        byteToHex[arr[offset + 4]] +
-        byteToHex[arr[offset + 5]] +
-        '-' +
-        byteToHex[arr[offset + 6]] +
-        byteToHex[arr[offset + 7]] +
-        '-' +
-        byteToHex[arr[offset + 8]] +
-        byteToHex[arr[offset + 9]] +
-        '-' +
-        byteToHex[arr[offset + 10]] +
-        byteToHex[arr[offset + 11]] +
-        byteToHex[arr[offset + 12]] +
-        byteToHex[arr[offset + 13]] +
-        byteToHex[arr[offset + 14]] +
-        byteToHex[arr[offset + 15]]).toLowerCase();
-}
-exports.unsafeStringify = unsafeStringify;
-function stringify(arr, offset = 0) {
-    const uuid = unsafeStringify(arr, offset);
-    if (!(0, validate_js_1.default)(uuid)) {
-        throw TypeError('Stringified UUID is invalid');
-    }
-    return uuid;
-}
-exports["default"] = stringify;
-
-
-/***/ }),
-
-/***/ 65597:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.updateV1State = void 0;
-const rng_js_1 = __nccwpck_require__(45983);
-const stringify_js_1 = __nccwpck_require__(29687);
-const _state = {};
-function v1(options, buf, offset) {
-    let bytes;
-    const isV6 = options?._v6 ?? false;
-    if (options) {
-        const optionsKeys = Object.keys(options);
-        if (optionsKeys.length === 1 && optionsKeys[0] === '_v6') {
-            options = undefined;
-        }
-    }
-    if (options) {
-        bytes = v1Bytes(options.random ?? options.rng?.() ?? (0, rng_js_1.default)(), options.msecs, options.nsecs, options.clockseq, options.node, buf, offset);
-    }
-    else {
-        const now = Date.now();
-        const rnds = (0, rng_js_1.default)();
-        updateV1State(_state, now, rnds);
-        bytes = v1Bytes(rnds, _state.msecs, _state.nsecs, isV6 ? undefined : _state.clockseq, isV6 ? undefined : _state.node, buf, offset);
-    }
-    return buf ?? (0, stringify_js_1.unsafeStringify)(bytes);
-}
-function updateV1State(state, now, rnds) {
-    state.msecs ??= -Infinity;
-    state.nsecs ??= 0;
-    if (now === state.msecs) {
-        state.nsecs++;
-        if (state.nsecs >= 10000) {
-            state.node = undefined;
-            state.nsecs = 0;
-        }
-    }
-    else if (now > state.msecs) {
-        state.nsecs = 0;
-    }
-    else if (now < state.msecs) {
-        state.node = undefined;
-    }
-    if (!state.node) {
-        state.node = rnds.slice(10, 16);
-        state.node[0] |= 0x01;
-        state.clockseq = ((rnds[8] << 8) | rnds[9]) & 0x3fff;
-    }
-    state.msecs = now;
-    return state;
-}
-exports.updateV1State = updateV1State;
-function v1Bytes(rnds, msecs, nsecs, clockseq, node, buf, offset = 0) {
-    if (rnds.length < 16) {
-        throw new Error('Random bytes length must be >= 16');
-    }
-    if (!buf) {
-        buf = new Uint8Array(16);
-        offset = 0;
-    }
-    else {
-        if (offset < 0 || offset + 16 > buf.length) {
-            throw new RangeError(`UUID byte range ${offset}:${offset + 15} is out of buffer bounds`);
-        }
-    }
-    msecs ??= Date.now();
-    nsecs ??= 0;
-    clockseq ??= ((rnds[8] << 8) | rnds[9]) & 0x3fff;
-    node ??= rnds.slice(10, 16);
-    msecs += 12219292800000;
-    const tl = ((msecs & 0xfffffff) * 10000 + nsecs) % 0x100000000;
-    buf[offset++] = (tl >>> 24) & 0xff;
-    buf[offset++] = (tl >>> 16) & 0xff;
-    buf[offset++] = (tl >>> 8) & 0xff;
-    buf[offset++] = tl & 0xff;
-    const tmh = ((msecs / 0x100000000) * 10000) & 0xfffffff;
-    buf[offset++] = (tmh >>> 8) & 0xff;
-    buf[offset++] = tmh & 0xff;
-    buf[offset++] = ((tmh >>> 24) & 0xf) | 0x10;
-    buf[offset++] = (tmh >>> 16) & 0xff;
-    buf[offset++] = (clockseq >>> 8) | 0x80;
-    buf[offset++] = clockseq & 0xff;
-    for (let n = 0; n < 6; ++n) {
-        buf[offset++] = node[n];
-    }
-    return buf;
-}
-exports["default"] = v1;
-
-
-/***/ }),
-
-/***/ 31092:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const parse_js_1 = __nccwpck_require__(22713);
-const stringify_js_1 = __nccwpck_require__(29687);
-function v1ToV6(uuid) {
-    const v1Bytes = typeof uuid === 'string' ? (0, parse_js_1.default)(uuid) : uuid;
-    const v6Bytes = _v1ToV6(v1Bytes);
-    return typeof uuid === 'string' ? (0, stringify_js_1.unsafeStringify)(v6Bytes) : v6Bytes;
-}
-exports["default"] = v1ToV6;
-function _v1ToV6(v1Bytes) {
-    return Uint8Array.of(((v1Bytes[6] & 0x0f) << 4) | ((v1Bytes[7] >> 4) & 0x0f), ((v1Bytes[7] & 0x0f) << 4) | ((v1Bytes[4] & 0xf0) >> 4), ((v1Bytes[4] & 0x0f) << 4) | ((v1Bytes[5] & 0xf0) >> 4), ((v1Bytes[5] & 0x0f) << 4) | ((v1Bytes[0] & 0xf0) >> 4), ((v1Bytes[0] & 0x0f) << 4) | ((v1Bytes[1] & 0xf0) >> 4), ((v1Bytes[1] & 0x0f) << 4) | ((v1Bytes[2] & 0xf0) >> 4), 0x60 | (v1Bytes[2] & 0x0f), v1Bytes[3], v1Bytes[8], v1Bytes[9], v1Bytes[10], v1Bytes[11], v1Bytes[12], v1Bytes[13], v1Bytes[14], v1Bytes[15]);
-}
-
-
-/***/ }),
-
-/***/ 1691:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.URL = exports.DNS = void 0;
-const md5_js_1 = __nccwpck_require__(86934);
-const v35_js_1 = __nccwpck_require__(31352);
-var v35_js_2 = __nccwpck_require__(31352);
-Object.defineProperty(exports, "DNS", ({ enumerable: true, get: function () { return v35_js_2.DNS; } }));
-Object.defineProperty(exports, "URL", ({ enumerable: true, get: function () { return v35_js_2.URL; } }));
-function v3(value, namespace, buf, offset) {
-    return (0, v35_js_1.default)(0x30, md5_js_1.default, value, namespace, buf, offset);
-}
-v3.DNS = v35_js_1.DNS;
-v3.URL = v35_js_1.URL;
-exports["default"] = v3;
-
-
-/***/ }),
-
-/***/ 31352:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.URL = exports.DNS = exports.stringToBytes = void 0;
-const parse_js_1 = __nccwpck_require__(22713);
-const stringify_js_1 = __nccwpck_require__(29687);
-function stringToBytes(str) {
-    str = unescape(encodeURIComponent(str));
-    const bytes = new Uint8Array(str.length);
-    for (let i = 0; i < str.length; ++i) {
-        bytes[i] = str.charCodeAt(i);
-    }
-    return bytes;
-}
-exports.stringToBytes = stringToBytes;
-exports.DNS = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
-exports.URL = '6ba7b811-9dad-11d1-80b4-00c04fd430c8';
-function v35(version, hash, value, namespace, buf, offset) {
-    const valueBytes = typeof value === 'string' ? stringToBytes(value) : value;
-    const namespaceBytes = typeof namespace === 'string' ? (0, parse_js_1.default)(namespace) : namespace;
-    if (typeof namespace === 'string') {
-        namespace = (0, parse_js_1.default)(namespace);
-    }
-    if (namespace?.length !== 16) {
-        throw TypeError('Namespace must be array-like (16 iterable integer values, 0-255)');
-    }
-    let bytes = new Uint8Array(16 + valueBytes.length);
-    bytes.set(namespaceBytes);
-    bytes.set(valueBytes, namespaceBytes.length);
-    bytes = hash(bytes);
-    bytes[6] = (bytes[6] & 0x0f) | version;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    if (buf) {
-        offset = offset || 0;
-        if (offset < 0 || offset + 16 > buf.length) {
-            throw new RangeError(`UUID byte range ${offset}:${offset + 15} is out of buffer bounds`);
-        }
-        for (let i = 0; i < 16; ++i) {
-            buf[offset + i] = bytes[i];
-        }
-        return buf;
-    }
-    return (0, stringify_js_1.unsafeStringify)(bytes);
-}
-exports["default"] = v35;
-
-
-/***/ }),
-
-/***/ 54834:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const native_js_1 = __nccwpck_require__(55831);
-const rng_js_1 = __nccwpck_require__(45983);
-const stringify_js_1 = __nccwpck_require__(29687);
-function v4(options, buf, offset) {
-    if (native_js_1.default.randomUUID && !buf && !options) {
-        return native_js_1.default.randomUUID();
-    }
-    options = options || {};
-    const rnds = options.random ?? options.rng?.() ?? (0, rng_js_1.default)();
-    if (rnds.length < 16) {
-        throw new Error('Random bytes length must be >= 16');
-    }
-    rnds[6] = (rnds[6] & 0x0f) | 0x40;
-    rnds[8] = (rnds[8] & 0x3f) | 0x80;
-    if (buf) {
-        offset = offset || 0;
-        if (offset < 0 || offset + 16 > buf.length) {
-            throw new RangeError(`UUID byte range ${offset}:${offset + 15} is out of buffer bounds`);
-        }
-        for (let i = 0; i < 16; ++i) {
-            buf[offset + i] = rnds[i];
-        }
-        return buf;
-    }
-    return (0, stringify_js_1.unsafeStringify)(rnds);
-}
-exports["default"] = v4;
-
-
-/***/ }),
-
-/***/ 22465:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.URL = exports.DNS = void 0;
-const sha1_js_1 = __nccwpck_require__(72449);
-const v35_js_1 = __nccwpck_require__(31352);
-var v35_js_2 = __nccwpck_require__(31352);
-Object.defineProperty(exports, "DNS", ({ enumerable: true, get: function () { return v35_js_2.DNS; } }));
-Object.defineProperty(exports, "URL", ({ enumerable: true, get: function () { return v35_js_2.URL; } }));
-function v5(value, namespace, buf, offset) {
-    return (0, v35_js_1.default)(0x50, sha1_js_1.default, value, namespace, buf, offset);
-}
-v5.DNS = v35_js_1.DNS;
-v5.URL = v35_js_1.URL;
-exports["default"] = v5;
-
-
-/***/ }),
-
-/***/ 69544:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const stringify_js_1 = __nccwpck_require__(29687);
-const v1_js_1 = __nccwpck_require__(65597);
-const v1ToV6_js_1 = __nccwpck_require__(31092);
-function v6(options, buf, offset) {
-    options ??= {};
-    offset ??= 0;
-    let bytes = (0, v1_js_1.default)({ ...options, _v6: true }, new Uint8Array(16));
-    bytes = (0, v1ToV6_js_1.default)(bytes);
-    if (buf) {
-        if (offset < 0 || offset + 16 > buf.length) {
-            throw new RangeError(`UUID byte range ${offset}:${offset + 15} is out of buffer bounds`);
-        }
-        for (let i = 0; i < 16; i++) {
-            buf[offset + i] = bytes[i];
-        }
-        return buf;
-    }
-    return (0, stringify_js_1.unsafeStringify)(bytes);
-}
-exports["default"] = v6;
-
-
-/***/ }),
-
-/***/ 82104:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const parse_js_1 = __nccwpck_require__(22713);
-const stringify_js_1 = __nccwpck_require__(29687);
-function v6ToV1(uuid) {
-    const v6Bytes = typeof uuid === 'string' ? (0, parse_js_1.default)(uuid) : uuid;
-    const v1Bytes = _v6ToV1(v6Bytes);
-    return typeof uuid === 'string' ? (0, stringify_js_1.unsafeStringify)(v1Bytes) : v1Bytes;
-}
-exports["default"] = v6ToV1;
-function _v6ToV1(v6Bytes) {
-    return Uint8Array.of(((v6Bytes[3] & 0x0f) << 4) | ((v6Bytes[4] >> 4) & 0x0f), ((v6Bytes[4] & 0x0f) << 4) | ((v6Bytes[5] & 0xf0) >> 4), ((v6Bytes[5] & 0x0f) << 4) | (v6Bytes[6] & 0x0f), v6Bytes[7], ((v6Bytes[1] & 0x0f) << 4) | ((v6Bytes[2] & 0xf0) >> 4), ((v6Bytes[2] & 0x0f) << 4) | ((v6Bytes[3] & 0xf0) >> 4), 0x10 | ((v6Bytes[0] & 0xf0) >> 4), ((v6Bytes[0] & 0x0f) << 4) | ((v6Bytes[1] & 0xf0) >> 4), v6Bytes[8], v6Bytes[9], v6Bytes[10], v6Bytes[11], v6Bytes[12], v6Bytes[13], v6Bytes[14], v6Bytes[15]);
-}
-
-
-/***/ }),
-
-/***/ 61631:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.updateV7State = void 0;
-const rng_js_1 = __nccwpck_require__(45983);
-const stringify_js_1 = __nccwpck_require__(29687);
-const _state = {};
-function v7(options, buf, offset) {
-    let bytes;
-    if (options) {
-        bytes = v7Bytes(options.random ?? options.rng?.() ?? (0, rng_js_1.default)(), options.msecs, options.seq, buf, offset);
-    }
-    else {
-        const now = Date.now();
-        const rnds = (0, rng_js_1.default)();
-        updateV7State(_state, now, rnds);
-        bytes = v7Bytes(rnds, _state.msecs, _state.seq, buf, offset);
-    }
-    return buf ?? (0, stringify_js_1.unsafeStringify)(bytes);
-}
-function updateV7State(state, now, rnds) {
-    state.msecs ??= -Infinity;
-    state.seq ??= 0;
-    if (now > state.msecs) {
-        state.seq = (rnds[6] << 23) | (rnds[7] << 16) | (rnds[8] << 8) | rnds[9];
-        state.msecs = now;
-    }
-    else {
-        state.seq = (state.seq + 1) | 0;
-        if (state.seq === 0) {
-            state.msecs++;
-        }
-    }
-    return state;
-}
-exports.updateV7State = updateV7State;
-function v7Bytes(rnds, msecs, seq, buf, offset = 0) {
-    if (rnds.length < 16) {
-        throw new Error('Random bytes length must be >= 16');
-    }
-    if (!buf) {
-        buf = new Uint8Array(16);
-        offset = 0;
-    }
-    else {
-        if (offset < 0 || offset + 16 > buf.length) {
-            throw new RangeError(`UUID byte range ${offset}:${offset + 15} is out of buffer bounds`);
-        }
-    }
-    msecs ??= Date.now();
-    seq ??= ((rnds[6] * 0x7f) << 24) | (rnds[7] << 16) | (rnds[8] << 8) | rnds[9];
-    buf[offset++] = (msecs / 0x10000000000) & 0xff;
-    buf[offset++] = (msecs / 0x100000000) & 0xff;
-    buf[offset++] = (msecs / 0x1000000) & 0xff;
-    buf[offset++] = (msecs / 0x10000) & 0xff;
-    buf[offset++] = (msecs / 0x100) & 0xff;
-    buf[offset++] = msecs & 0xff;
-    buf[offset++] = 0x70 | ((seq >>> 28) & 0x0f);
-    buf[offset++] = (seq >>> 20) & 0xff;
-    buf[offset++] = 0x80 | ((seq >>> 14) & 0x3f);
-    buf[offset++] = (seq >>> 6) & 0xff;
-    buf[offset++] = ((seq << 2) & 0xff) | (rnds[10] & 0x03);
-    buf[offset++] = rnds[11];
-    buf[offset++] = rnds[12];
-    buf[offset++] = rnds[13];
-    buf[offset++] = rnds[14];
-    buf[offset++] = rnds[15];
-    return buf;
-}
-exports["default"] = v7;
-
-
-/***/ }),
-
-/***/ 25182:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const regex_js_1 = __nccwpck_require__(89997);
-function validate(uuid) {
-    return typeof uuid === 'string' && regex_js_1.default.test(uuid);
-}
-exports["default"] = validate;
-
-
-/***/ }),
-
-/***/ 90302:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const validate_js_1 = __nccwpck_require__(25182);
-function version(uuid) {
-    if (!(0, validate_js_1.default)(uuid)) {
-        throw TypeError('Invalid UUID');
-    }
-    return parseInt(uuid.slice(14, 15), 16);
-}
-exports["default"] = version;
 
 
 /***/ }),

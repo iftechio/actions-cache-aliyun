@@ -1,9 +1,9 @@
 ---
 name: "@aws-sdk/middleware-expect-continue"
-version: 3.50.0
+version: 3.972.14
 type: npm
 summary:
-homepage: https://github.com/aws/aws-sdk-js-v3/tree/main/packages/middleware-expect-continue
+homepage: https://github.com/aws/aws-sdk-js-v3/tree/main/packages-internal/middleware-expect-continue
 license: apache-2.0
 licenses:
 - sources: LICENSE

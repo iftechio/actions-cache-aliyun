@@ -1,9 +1,9 @@
 ---
 name: "@smithy/fetch-http-handler"
-version: 2.2.3
+version: 5.4.6
 type: npm
 summary: Provides a way to make requests
-homepage: https://github.com/awslabs/smithy-typescript/tree/main/packages/fetch-http-handler
+homepage: https://github.com/smithy-lang/smithy-typescript/tree/main/packages/fetch-http-handler
 license: apache-2.0
 licenses:
 - sources: LICENSE
