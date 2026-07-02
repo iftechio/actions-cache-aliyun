@@ -1,4 +1,3 @@
-/// <reference types="node" />
 import { S3ClientConfig } from '@aws-sdk/client-s3';
 import * as fs from 'fs';
 import { DownloadOptions } from '../options';

@@ -15,24 +15,28 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.saveCache = exports.restoreCache = exports.isFeatureAvailable = exports.ReserveCacheError = exports.ValidationError = void 0;
+exports.ReserveCacheError = exports.ValidationError = void 0;
+exports.isFeatureAvailable = isFeatureAvailable;
+exports.restoreCache = restoreCache;
+exports.saveCache = saveCache;
 const core = __importStar(require("@actions/core"));
 const path = __importStar(require("path"));
 const utils = __importStar(require("./internal/cacheUtils"));
@@ -76,7 +80,6 @@ function checkKey(key) {
 function isFeatureAvailable() {
     return !!process.env['ACTIONS_CACHE_URL'];
 }
-exports.isFeatureAvailable = isFeatureAvailable;
 /**
  * Restores cache from keys
  *
@@ -89,71 +92,68 @@ exports.isFeatureAvailable = isFeatureAvailable;
  * @param s3BucketName a name of AWS S3 bucket
  * @returns string returns the key for the cache hit, otherwise returns undefined
  */
-function restoreCache(paths, primaryKey, restoreKeys, options, enableCrossOsArchive = false, s3Options, s3BucketName) {
-    return __awaiter(this, void 0, void 0, function* () {
-        checkPaths(paths);
-        restoreKeys = restoreKeys || [];
-        const keys = [primaryKey, ...restoreKeys];
-        core.debug('Resolved Keys:');
-        core.debug(JSON.stringify(keys));
-        if (keys.length > 10) {
-            throw new ValidationError(`Key Validation Error: Keys are limited to a maximum of 10.`);
+async function restoreCache(paths, primaryKey, restoreKeys, options, enableCrossOsArchive = false, s3Options, s3BucketName) {
+    checkPaths(paths);
+    restoreKeys = restoreKeys || [];
+    const keys = [primaryKey, ...restoreKeys];
+    core.debug('Resolved Keys:');
+    core.debug(JSON.stringify(keys));
+    if (keys.length > 10) {
+        throw new ValidationError(`Key Validation Error: Keys are limited to a maximum of 10.`);
+    }
+    for (const key of keys) {
+        checkKey(key);
+    }
+    const compressionMethod = await utils.getCompressionMethod();
+    let archivePath = '';
+    try {
+        // path are needed to compute version
+        const cacheEntry = await cacheHttpClient.getCacheEntry(keys, paths, {
+            compressionMethod,
+            enableCrossOsArchive
+        }, s3Options, s3BucketName);
+        if (!cacheEntry?.archiveLocation) {
+            // Cache not found
+            return undefined;
         }
-        for (const key of keys) {
-            checkKey(key);
-        }
-        const compressionMethod = yield utils.getCompressionMethod();
-        let archivePath = '';
-        try {
-            // path are needed to compute version
-            const cacheEntry = yield cacheHttpClient.getCacheEntry(keys, paths, {
-                compressionMethod,
-                enableCrossOsArchive
-            }, s3Options, s3BucketName);
-            if (!(cacheEntry === null || cacheEntry === void 0 ? void 0 : cacheEntry.archiveLocation)) {
-                // Cache not found
-                return undefined;
-            }
-            if (options === null || options === void 0 ? void 0 : options.lookupOnly) {
-                core.info('Lookup only - skipping download');
-                return cacheEntry.cacheKey;
-            }
-            archivePath = path.join(yield utils.createTempDirectory(), utils.getCacheFileName(compressionMethod));
-            core.debug(`Archive Path: ${archivePath}`);
-            // Download the cache from the cache entry
-            yield cacheHttpClient.downloadCache(cacheEntry, archivePath, options, s3Options, s3BucketName);
-            if (core.isDebug()) {
-                yield (0, tar_1.listTar)(archivePath, compressionMethod);
-            }
-            const archiveFileSize = utils.getArchiveFileSizeInBytes(archivePath);
-            core.info(`Cache Size: ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B)`);
-            yield (0, tar_1.extractTar)(archivePath, compressionMethod);
-            core.info('Cache restored successfully');
+        if (options?.lookupOnly) {
+            core.info('Lookup only - skipping download');
             return cacheEntry.cacheKey;
         }
+        archivePath = path.join(await utils.createTempDirectory(), utils.getCacheFileName(compressionMethod));
+        core.debug(`Archive Path: ${archivePath}`);
+        // Download the cache from the cache entry
+        await cacheHttpClient.downloadCache(cacheEntry, archivePath, options, s3Options, s3BucketName);
+        if (core.isDebug()) {
+            await (0, tar_1.listTar)(archivePath, compressionMethod);
+        }
+        const archiveFileSize = utils.getArchiveFileSizeInBytes(archivePath);
+        core.info(`Cache Size: ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B)`);
+        await (0, tar_1.extractTar)(archivePath, compressionMethod);
+        core.info('Cache restored successfully');
+        return cacheEntry.cacheKey;
+    }
+    catch (error) {
+        const typedError = error;
+        if (typedError.name === ValidationError.name) {
+            throw error;
+        }
+        else {
+            // Supress all non-validation cache related errors because caching should be optional
+            core.warning(`Failed to restore: ${error.message}`);
+        }
+    }
+    finally {
+        // Try to delete the archive to save space
+        try {
+            await utils.unlinkFile(archivePath);
+        }
         catch (error) {
-            const typedError = error;
-            if (typedError.name === ValidationError.name) {
-                throw error;
-            }
-            else {
-                // Supress all non-validation cache related errors because caching should be optional
-                core.warning(`Failed to restore: ${error.message}`);
-            }
+            core.debug(`Failed to delete archive: ${error}`);
         }
-        finally {
-            // Try to delete the archive to save space
-            try {
-                yield utils.unlinkFile(archivePath);
-            }
-            catch (error) {
-                core.debug(`Failed to delete archive: ${error}`);
-            }
-        }
-        return undefined;
-    });
+    }
+    return undefined;
 }
-exports.restoreCache = restoreCache;
 /**
  * Saves a list of files with the specified key
  *
@@ -165,77 +165,74 @@ exports.restoreCache = restoreCache;
  * @param s3BucketName a name of AWS S3 bucket
  * @returns number returns cacheId if the cache was saved successfully and throws an error if save fails
  */
-function saveCache(paths, key, options, enableCrossOsArchive = false, s3Options, s3BucketName) {
-    var _a, _b, _c, _d, _e;
-    return __awaiter(this, void 0, void 0, function* () {
-        checkPaths(paths);
-        checkKey(key);
-        const compressionMethod = yield utils.getCompressionMethod();
-        let cacheId = -1;
-        const cachePaths = yield utils.resolvePaths(paths);
-        core.debug('Cache Paths:');
-        core.debug(`${JSON.stringify(cachePaths)}`);
-        if (cachePaths.length === 0) {
-            throw new Error(`Path Validation Error: Path(s) specified in the action for caching do(es) not exist, hence no cache is being saved.`);
+async function saveCache(paths, key, options, enableCrossOsArchive = false, s3Options, s3BucketName) {
+    checkPaths(paths);
+    checkKey(key);
+    const compressionMethod = await utils.getCompressionMethod();
+    let cacheId = -1;
+    const cachePaths = await utils.resolvePaths(paths);
+    core.debug('Cache Paths:');
+    core.debug(`${JSON.stringify(cachePaths)}`);
+    if (cachePaths.length === 0) {
+        throw new Error(`Path Validation Error: Path(s) specified in the action for caching do(es) not exist, hence no cache is being saved.`);
+    }
+    const archiveFolder = await utils.createTempDirectory();
+    const archivePath = path.join(archiveFolder, utils.getCacheFileName(compressionMethod));
+    core.debug(`Archive Path: ${archivePath}`);
+    try {
+        await (0, tar_1.createTar)(archiveFolder, cachePaths, compressionMethod);
+        if (core.isDebug()) {
+            await (0, tar_1.listTar)(archivePath, compressionMethod);
         }
-        const archiveFolder = yield utils.createTempDirectory();
-        const archivePath = path.join(archiveFolder, utils.getCacheFileName(compressionMethod));
-        core.debug(`Archive Path: ${archivePath}`);
-        try {
-            yield (0, tar_1.createTar)(archiveFolder, cachePaths, compressionMethod);
-            if (core.isDebug()) {
-                yield (0, tar_1.listTar)(archivePath, compressionMethod);
-            }
-            const fileSizeLimit = 10 * 1024 * 1024 * 1024; // 10GB per repo limit
-            const archiveFileSize = utils.getArchiveFileSizeInBytes(archivePath);
-            core.debug(`File Size: ${archiveFileSize}`);
-            // For GHES, this check will take place in ReserveCache API with enterprise file size limit
-            if (archiveFileSize > fileSizeLimit && !utils.isGhes()) {
-                throw new Error(`Cache size of ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B) is over the 10GB limit, not saving cache.`);
-            }
-            if (!(s3Options && s3BucketName)) {
-                core.debug('Reserving Cache');
-                const reserveCacheResponse = yield cacheHttpClient.reserveCache(key, paths, {
-                    compressionMethod,
-                    enableCrossOsArchive,
-                    cacheSize: archiveFileSize
-                }, s3Options, s3BucketName);
-                if ((_a = reserveCacheResponse === null || reserveCacheResponse === void 0 ? void 0 : reserveCacheResponse.result) === null || _a === void 0 ? void 0 : _a.cacheId) {
-                    cacheId = (_b = reserveCacheResponse === null || reserveCacheResponse === void 0 ? void 0 : reserveCacheResponse.result) === null || _b === void 0 ? void 0 : _b.cacheId;
-                }
-                else if ((reserveCacheResponse === null || reserveCacheResponse === void 0 ? void 0 : reserveCacheResponse.statusCode) === 400) {
-                    throw new Error((_d = (_c = reserveCacheResponse === null || reserveCacheResponse === void 0 ? void 0 : reserveCacheResponse.error) === null || _c === void 0 ? void 0 : _c.message) !== null && _d !== void 0 ? _d : `Cache size of ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B) is over the data cap limit, not saving cache.`);
-                }
-                else {
-                    throw new ReserveCacheError(`Unable to reserve cache with key ${key}, another job may be creating this cache. More details: ${(_e = reserveCacheResponse === null || reserveCacheResponse === void 0 ? void 0 : reserveCacheResponse.error) === null || _e === void 0 ? void 0 : _e.message}`);
-                }
-            }
-            core.debug(`Saving Cache (ID: ${cacheId})`);
-            yield cacheHttpClient.saveCache(cacheId, archivePath, key, options, s3Options, s3BucketName);
+        const fileSizeLimit = 10 * 1024 * 1024 * 1024; // 10GB per repo limit
+        const archiveFileSize = utils.getArchiveFileSizeInBytes(archivePath);
+        core.debug(`File Size: ${archiveFileSize}`);
+        // For GHES, this check will take place in ReserveCache API with enterprise file size limit
+        if (archiveFileSize > fileSizeLimit && !utils.isGhes()) {
+            throw new Error(`Cache size of ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B) is over the 10GB limit, not saving cache.`);
         }
-        catch (error) {
-            const typedError = error;
-            if (typedError.name === ValidationError.name) {
-                throw error;
+        if (!(s3Options && s3BucketName)) {
+            core.debug('Reserving Cache');
+            const reserveCacheResponse = await cacheHttpClient.reserveCache(key, paths, {
+                compressionMethod,
+                enableCrossOsArchive,
+                cacheSize: archiveFileSize
+            }, s3Options, s3BucketName);
+            if (reserveCacheResponse?.result?.cacheId) {
+                cacheId = reserveCacheResponse?.result?.cacheId;
             }
-            else if (typedError.name === ReserveCacheError.name) {
-                core.info(`Failed to save: ${typedError.message}`);
+            else if (reserveCacheResponse?.statusCode === 400) {
+                throw new Error(reserveCacheResponse?.error?.message ??
+                    `Cache size of ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B) is over the data cap limit, not saving cache.`);
             }
             else {
-                core.warning(`Failed to save: ${typedError.message}`);
+                throw new ReserveCacheError(`Unable to reserve cache with key ${key}, another job may be creating this cache. More details: ${reserveCacheResponse?.error?.message}`);
             }
         }
-        finally {
-            // Try to delete the archive to save space
-            try {
-                yield utils.unlinkFile(archivePath);
-            }
-            catch (error) {
-                core.debug(`Failed to delete archive: ${error}`);
-            }
+        core.debug(`Saving Cache (ID: ${cacheId})`);
+        await cacheHttpClient.saveCache(cacheId, archivePath, key, options, s3Options, s3BucketName);
+    }
+    catch (error) {
+        const typedError = error;
+        if (typedError.name === ValidationError.name) {
+            throw error;
         }
-        return cacheId;
-    });
+        else if (typedError.name === ReserveCacheError.name) {
+            core.info(`Failed to save: ${typedError.message}`);
+        }
+        else {
+            core.warning(`Failed to save: ${typedError.message}`);
+        }
+    }
+    finally {
+        // Try to delete the archive to save space
+        try {
+            await utils.unlinkFile(archivePath);
+        }
+        catch (error) {
+            core.debug(`Failed to delete archive: ${error}`);
+        }
+    }
+    return cacheId;
 }
-exports.saveCache = saveCache;
 //# sourceMappingURL=cache.js.map
