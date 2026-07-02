@@ -1,9 +1,9 @@
 ---
 name: "@smithy/node-http-handler"
-version: 2.1.7
+version: 4.7.6
 type: npm
 summary: Provides a way to make requests
-homepage: https://github.com/awslabs/smithy-typescript/tree/main/packages/node-http-handler
+homepage: https://github.com/smithy-lang/smithy-typescript/tree/main/packages/node-http-handler
 license: apache-2.0
 licenses:
 - sources: LICENSE

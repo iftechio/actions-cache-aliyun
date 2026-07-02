@@ -1,10 +1,10 @@
 ---
 name: "@aws-crypto/supports-web-crypto"
-version: 2.0.0
+version: 5.2.0
 type: npm
 summary: Provides functions for detecting if the host environment supports the WebCrypto
   API
-homepage:
+homepage: https://github.com/aws/aws-sdk-js-crypto-helpers/tree/master/packages/supports-web-crypto
 license: apache-2.0
 licenses:
 - sources: LICENSE

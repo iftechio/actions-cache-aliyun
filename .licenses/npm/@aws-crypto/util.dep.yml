@@ -1,9 +1,9 @@
 ---
 name: "@aws-crypto/util"
-version: 2.0.1
+version: 5.2.0
 type: npm
 summary:
-homepage:
+homepage: https://github.com/aws/aws-sdk-js-crypto-helpers/tree/master/packages/util
 license: apache-2.0
 licenses:
 - sources: LICENSE

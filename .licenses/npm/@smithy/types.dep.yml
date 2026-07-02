@@ -1,9 +1,9 @@
 ---
 name: "@smithy/types"
-version: 2.3.5
+version: 4.14.3
 type: npm
 summary:
-homepage: https://github.com/awslabs/smithy-typescript/tree/main/packages/types
+homepage: https://github.com/smithy-lang/smithy-typescript/tree/main/packages/types
 license: apache-2.0
 licenses:
 - sources: LICENSE

@@ -1,9 +1,9 @@
 ---
 name: "@aws-sdk/middleware-ssec"
-version: 3.50.0
+version: 3.972.11
 type: npm
 summary:
-homepage: https://github.com/aws/aws-sdk-js-v3/tree/main/packages/middleware-ssec
+homepage: https://github.com/aws/aws-sdk-js-v3/tree/main/packages-internal/middleware-ssec
 license: apache-2.0
 licenses:
 - sources: LICENSE
