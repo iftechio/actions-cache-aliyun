@@ -91,7 +91,7 @@ function getCacheEntryS3(s3Options, s3BucketName, keys, paths) {
     return __awaiter(this, void 0, void 0, function* () {
         const primaryKey = keys[0];
         const s3client = new client_s3_1.S3Client(s3Options);
-        let contents = new Array();
+        const contents = [];
         let s3ContinuationToken = undefined;
         let count = 0;
         const param = {
@@ -99,7 +99,7 @@ function getCacheEntryS3(s3Options, s3BucketName, keys, paths) {
         };
         for (;;) {
             core.debug(`ListObjects Count: ${count}`);
-            if (s3ContinuationToken != undefined) {
+            if (s3ContinuationToken !== undefined) {
                 param.ContinuationToken = s3ContinuationToken;
             }
             let response;
@@ -110,7 +110,7 @@ function getCacheEntryS3(s3Options, s3BucketName, keys, paths) {
                 throw new Error(`Error from S3: ${e}`);
             }
             if (!response.Contents) {
-                if (contents.length != 0) {
+                if (contents.length !== 0) {
                     break;
                 }
                 throw new Error(`Cannot found object in bucket ${s3BucketName}`);
@@ -121,7 +121,7 @@ function getCacheEntryS3(s3Options, s3BucketName, keys, paths) {
                 return {
                     cacheKey: primaryKey,
                     creationTime: found.LastModified.toString(),
-                    archiveLocation: "https://s3.amazonaws.com/" // dummy
+                    archiveLocation: 'https://s3.amazonaws.com/' // dummy
                 };
             }
             response.Contents.map((obj) => contents.push({
@@ -144,7 +144,7 @@ function getCacheEntryS3(s3Options, s3BucketName, keys, paths) {
             return {
                 cacheKey: found.Key,
                 creationTime: found.LastModified.toString(),
-                archiveLocation: "https://s3.amazonaws.com/" // dummy
+                archiveLocation: 'https://s3.amazonaws.com/' // dummy
             };
         }
         return null;
@@ -161,7 +161,7 @@ function searchRestoreKeyEntry(notPrimaryKey, entries) {
 }
 function _searchRestoreKeyEntry(notPrimaryKey, entries) {
     var _a;
-    let matchPrefix = new Array();
+    const matchPrefix = [];
     for (const entry of entries) {
         if (entry.Key === notPrimaryKey) {
             // extractly match, Use this entry
@@ -177,7 +177,7 @@ function _searchRestoreKeyEntry(notPrimaryKey, entries) {
     }
     matchPrefix.sort(function (i, j) {
         var _a, _b, _c, _d, _e, _f;
-        if (i.LastModified == undefined || j.LastModified == undefined) {
+        if (i.LastModified === undefined || j.LastModified === undefined) {
             return 0;
         }
         if (((_a = i.LastModified) === null || _a === void 0 ? void 0 : _a.getTime()) === ((_b = j.LastModified) === null || _b === void 0 ? void 0 : _b.getTime())) {

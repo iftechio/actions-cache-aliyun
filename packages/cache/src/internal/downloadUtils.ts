@@ -1,7 +1,6 @@
 import * as core from '@actions/core'
 import {HttpClient, HttpClientResponse} from '@actions/http-client'
 import {BlockBlobClient} from '@azure/storage-blob'
-import {TransferProgressEvent} from '@azure/ms-rest-js'
 import {GetObjectCommand, S3Client, S3ClientConfig} from '@aws-sdk/client-s3'
 import * as buffer from 'buffer'
 import * as fs from 'fs'
@@ -12,7 +11,12 @@ import * as utils from './cacheUtils'
 import {SocketTimeout} from './constants'
 import {DownloadOptions} from '../options'
 import {retryHttpClientResponse} from './requestUtils'
-import AbortController from 'abort-controller'
+
+// Matches the progress event shape emitted by the Azure SDK
+// (previously imported from @azure/ms-rest-js).
+interface TransferProgressEvent {
+  loadedBytes: number
+}
 
 /**
  * Pipes the body of a HTTP response to a stream

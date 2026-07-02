@@ -44,7 +44,6 @@ const util = __importStar(require("util"));
 const utils = __importStar(require("./cacheUtils"));
 const constants_1 = require("./constants");
 const requestUtils_1 = require("./requestUtils");
-const abort_controller_1 = require("@azure/abort-controller");
 /**
  * Pipes the body of a HTTP response to a stream
  *
@@ -338,7 +337,7 @@ function downloadCacheStorageSDK(archiveLocation, archivePath, options) {
             const fd = fs.openSync(archivePath, 'w');
             try {
                 downloadProgress.startDisplayTimer();
-                const controller = new abort_controller_1.AbortController();
+                const controller = new AbortController();
                 const abortSignal = controller.signal;
                 while (!downloadProgress.isDone()) {
                     const segmentStart = downloadProgress.segmentOffset + downloadProgress.segmentSize;
@@ -379,7 +378,7 @@ function downloadCacheStorageS3(key, archivePath, s3Options, s3BucketName) {
         const s3client = new client_s3_1.S3Client(s3Options);
         const param = {
             Bucket: s3BucketName,
-            Key: key,
+            Key: key
         };
         const response = yield s3client.send(new client_s3_1.GetObjectCommand(param));
         if (!response.Body) {

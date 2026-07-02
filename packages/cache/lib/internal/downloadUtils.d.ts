@@ -1,8 +1,10 @@
 /// <reference types="node" />
-import { TransferProgressEvent } from '@azure/ms-rest-js';
 import { S3ClientConfig } from '@aws-sdk/client-s3';
 import * as fs from 'fs';
 import { DownloadOptions } from '../options';
+interface TransferProgressEvent {
+    loadedBytes: number;
+}
 /**
  * Class for tracking the download state and displaying stats.
  */
@@ -91,3 +93,4 @@ export declare function downloadCacheStorageSDK(archiveLocation: string, archive
  * @param s3BucketName: the name of bucket in AWS S3
  */
 export declare function downloadCacheStorageS3(key: string, archivePath: string, s3Options: S3ClientConfig, s3BucketName: string): Promise<void>;
+export {};
